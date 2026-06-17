@@ -27,12 +27,12 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
                                 Webhook │ (Trigger Automático)
                                         ▼
  ┌────────────────────────────────────────────────────────┐
- │                       HARNESS CI                        │
+ │                       CIRCLECI                          │
  │                                                         │
  │  1. Clone Code                                          │
  │  2. Lint  (gofmt / go vet)                              │
  │  3. SonarCloud Scan ───> [ Quality Gate ]              │
- │  4. go build + go test (contenedor Go de Harness)      │
+ │  4. go build + go test (executor cimg/go)              │
  │  5. Deploy (Webhook HTTP a Render) ──────────┐         │
  │  6. Smoke Test post-deploy (GET /health) ────┤         │
  │  7. Scripts de Feedback (APIs HTTP) ─────────┼───┐     │
@@ -62,8 +62,9 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
 - **Build local de contenedores: Docker o Podman (intercambiables).** El artefacto
   que se versiona es un `Dockerfile` (formato OCI), portable entre ambos runtimes.
   Podman es la opción recomendada en local por ser *daemonless* y *rootless*
-  (`alias docker=podman`); la elección **no afecta** al pipeline, ya que Harness y
-  Render compilan la imagen con su propio runtime. En WSL2, instalar Podman por
+  (`alias docker=podman`); la elección **no afecta** al pipeline, ya que Render
+  compila la imagen con su propio runtime (CircleCI ni siquiera la construye). En
+  WSL2, instalar Podman por
   `apt`, no por `snap`. **Gotcha de portabilidad:** Podman exige nombres de imagen
   totalmente calificados, así que el `Dockerfile` debe usar
   `FROM docker.io/library/golang:1.22-alpine` (no `FROM golang:1.22`) para construir
@@ -74,24 +75,28 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
 ### B. Control de Versiones (VCS)
 
 - **Plataforma: GitHub.** Repositorio central de código. Funciona como disparador
-  automático (Trigger) enviando un Webhook a Harness CI ante eventos de
-  **Pull Request** y **push/merge a `main`**.
+  automático (Trigger): CircleCI está integrado con GitHub y arranca un pipeline en
+  cada **push** (incluidos los de ramas con Pull Request abierto y el merge a la rama
+  principal `master`).
 
 ### C. Servidor de Integración Continua (IC)
 
-- **Motor Cloud: Harness CI.** Suite DevOps en la nube. Su capa gratuita otorga
-  ~2.000 créditos mensuales (~1.000 minutos de ejecución), evitando hostear
-  servidores propios como Jenkins o Woodpecker. *(Verificar límites vigentes del
-  Free Tier al momento de configurar, ya que cambian.)*
-- **Aislamiento.** Cada *step* de Harness corre dentro de su propio contenedor
-  efímero en la nube (p. ej. la imagen `golang` para los pasos de build/test). Este
-  runtime lo gestiona Harness: **no** se usa el Docker/Podman local del desarrollador.
-- **Quién construye la imagen de producción: Render.** Harness solo ejecuta
+- **Motor Cloud: CircleCI.** Plataforma de CI/CD en la nube. Su plan **Free no
+  requiere tarjeta de crédito** y otorga ~30.000 créditos/mes (~3.000 minutos en
+  Linux Medium), de sobra para este proyecto. Se eligió tras descartar Harness (pasó a
+  pedir tarjeta), Cirrus CI (cerró en jun-2026) y GitLab CI (pide tarjeta para los
+  *shared runners*). *(Verificar límites vigentes del Free Tier al configurar.)*
+  La definición del pipeline vive **versionada en el repo** en `.circleci/config.yml`.
+- **Aislamiento.** Cada *job* de CircleCI corre dentro de su propio contenedor
+  efímero en la nube. Usamos el *executor* Docker con la imagen oficial **`cimg/go`**
+  (trae la toolchain de Go lista). Este runtime lo gestiona CircleCI: **no** se usa el
+  Docker/Podman local del desarrollador.
+- **Quién construye la imagen de producción: Render.** CircleCI solo ejecuta
   `go build` + `go test`; al terminar invoca el *Deploy Hook* de Render, que
   reconstruye la imagen desde el `Dockerfile`. Así el pipeline no necesita un
-  *builder* de imágenes (ni kaniko, ni DinD, ni registry), lo que simplifica la
-  configuración y mantiene a Podman/Docker como herramienta **exclusivamente local**.
-  *(Trade-off: un error en el `Dockerfile` no lo detecta Harness sino el build de
+  *builder* de imágenes (ni registry), lo que simplifica la configuración y mantiene a
+  Podman/Docker como herramienta **exclusivamente local**.
+  *(Trade-off: un error en el `Dockerfile` no lo detecta CircleCI sino el build de
   Render / el smoke test. Como el `Dockerfile` es mínimo y estable, el riesgo es bajo;
   `go build` ya cubre los errores de compilación del código.)*
 
@@ -135,7 +140,7 @@ Justificación frente a Node/Python/Bun:
 - **Cold start casi instantáneo** → el *smoke test* post-deploy en Render Free
   (que duerme el servicio tras 15 min de inactividad) es confiable.
 - **Cero dependencias de test** → `go test` viene en la toolchain; menos `install`,
-  menos créditos de Harness consumidos, menos puntos de fallo ajenos al código.
+  menos créditos de CircleCI consumidos, menos puntos de fallo ajenos al código.
 
 ### Endpoints
 
@@ -173,33 +178,36 @@ mantener el CI pure-Go, rápido y barato.
 /web/index.html              # landing con Three.js (servida vía go:embed)
 /Dockerfile                  # multi-stage: build golang -> runtime scratch/distroless
 /sonar-project.properties    # configuración de SonarCloud
-/.harness/                   # definición del pipeline (o configurado en la UI de Harness)
+/.circleci/config.yml        # definición del pipeline de CircleCI (versionada en el repo)
 ```
 
 ---
 
 ## 4. Modelo de Ramas y Disparadores
 
-Se usa el **Pull Request como Quality Gate**:
+Se usa el **Pull Request como Quality Gate**. CircleCI dispara en cada push; la
+separación validación/entrega se logra con **filtros de rama** en el workflow:
 
-- **En Pull Request** → Harness ejecuta `lint` → `SonarCloud` → `go test`.
-  **No despliega.** El PR no es *mergeable* si algún paso falla.
-- **En merge a `main`** → ejecuta todo lo anterior **+ `docker build` + deploy a
-  Render + smoke test + feedback**.
+- **En cualquier rama / push de PR** → CircleCI corre el job de validación:
+  `lint` → `SonarCloud` → `go build` + `go test`. **No despliega.** El check aparece en
+  el PR y, si falla, el PR no debería mergearse.
+- **En push a `master`** (el merge) → además del job de validación, corre el job de
+  `deploy` (filtrado con `filters: branches: only: master`, y `requires` el job de
+  validación): deploy a Render + smoke test + feedback.
 
-Esto separa nítidamente **validación** (en PR) de **entrega** (en `main`), reflejando
-el "Ramas y Merges" del modelo.
+Esto separa nítidamente **validación** (toda rama) de **entrega** (solo `master`),
+reflejando el "Ramas y Merges" del modelo.
 
 ---
 
 ## 5. Plan de Flujo Secuencial (Paso a Paso)
 
 ```text
-PR abierto ─► [gofmt/vet] ─► [SonarCloud] ─► [go test] ─► OK: mergeable
+push de PR ─► [gofmt/vet] ─► [SonarCloud] ─► [go build + go test] ─► OK: mergeable
                                   │ falla
                                   └─► FALLA: Telegram + Trello "Bugs", PR bloqueado
 
-merge a main ─► [Trello: "QA / Verifying"] ─► [gofmt/vet] ─► [SonarCloud Quality Gate]
+push a master ─► [Trello: "QA / Verifying"] ─► [gofmt/vet] ─► [SonarCloud Quality Gate]
    ─► [go build + go test] ─► [deploy Render (Render buildea la imagen)] ─► [smoke test GET /health]
         ├─ EXITO ─► Trello "Done / Production" + Telegram notifica OK
         └─ FALLA ─► Telegram notifica el fallo + Trello "Bugs"; Render queda en versión anterior
@@ -207,29 +215,29 @@ merge a main ─► [Trello: "QA / Verifying"] ─► [gofmt/vet] ─► [SonarC
 
 Detalle por fase:
 
-1. **Fase de Commit.** El equipo sube cambios a GitHub. GitHub despierta a Harness CI.
-2. **Fase de Inicialización.** Harness mueve la tarjeta de Trello correspondiente a
+1. **Fase de Commit.** El equipo sube cambios a GitHub. GitHub dispara a CircleCI.
+2. **Fase de Inicialización.** CircleCI mueve la tarjeta de Trello correspondiente a
    la columna **"QA / Verifying"**.
 3. **Fase de Lint.** `gofmt -l` y `go vet` validan formato y errores estáticos básicos.
 4. **Fase de Auditoría (SonarCloud).** Se inspecciona el código. Si no pasa el
-   Quality Gate, el pipeline se frena y salta a la fase de error.
-5. **Fase de Build & Test.** En el contenedor Go de Harness se ejecuta `go build`
+   Quality Gate, el job falla y se salta a la fase de error.
+5. **Fase de Build & Test.** En el executor `cimg/go` se ejecuta `go build`
    (chequea compilación) y `go test`.
-6. **Fase de Despliegue** *(solo en `main`)*. Si todo dio verde, Harness invoca el
+6. **Fase de Despliegue** *(solo en `master`)*. Si todo dio verde, CircleCI invoca el
    *Deploy Hook* de Render vía `curl`. **Render reconstruye la imagen desde el
    `Dockerfile`** y actualiza la app.
-7. **Fase de Smoke Test** *(solo en `main`)*. Ver §6.
+7. **Fase de Smoke Test** *(solo en `master`)*. Ver §6.
 8. **Fase de Feedback Final:**
    - **On Success:** Trello mueve la tarjeta a "Done / Production" con un comentario.
      Telegram: `Pipeline Exitoso. Desplegado correctamente en Render.`
    - **On Failure:** Trello regresa la tarjeta a "In Progress" / "Bugs" detallando el
-     error. Telegram: `Pipeline Fallido. Revisar logs en Harness.`
+     error. Telegram: `Pipeline Fallido. Revisar logs en CircleCI.`
 
 ---
 
 ## 6. Smoke Test Post-Deploy y Rollback
 
-Tras el deploy, Harness verifica que la aplicación **realmente levantó** (no solo que
+Tras el deploy, CircleCI verifica que la aplicación **realmente levantó** (no solo que
 compiló). Esto cubre la flecha de "resultados de la instalación" del modelo de IC.
 
 ```bash
@@ -241,28 +249,36 @@ curl --fail --retry 5 --retry-delay 10 --retry-connrefused \
 - Si el smoke test **pasa** → se dispara el feedback de éxito.
 - Si **falla** → feedback de error. Como Render conserva la versión anterior de forma
   inmutable, el **rollback es manual (1 click)** desde el panel de Render. *(Extensión
-  opcional: rollback automático invocando la API de Render desde Harness.)*
+  opcional: rollback automático invocando la API de Render desde CircleCI.)*
 
 ---
 
 ## 7. Manejo de Secretos
 
-Ningún token vive en el repositorio. Todos se configuran como **Harness Secrets** y se
-inyectan como variables de entorno en los *Run Steps*:
+Ningún token vive en el repositorio. Todos se configuran en CircleCI como variables
+de entorno y se inyectan en los pasos del pipeline:
 
-| Secreto | Uso |
-|---|---|
-| `SONAR_TOKEN` | Autenticación con SonarCloud |
-| `RENDER_DEPLOY_HOOK_URL` | Disparar el deploy en Render |
-| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | Enviar notificaciones |
-| `TRELLO_KEY` / `TRELLO_TOKEN` | Mover tarjetas vía API |
-| `TRELLO_LIST_*` (IDs de columnas) | Destino de las tarjetas según el estado |
+- **`SONAR_TOKEN`** → en un **Context** de CircleCI llamado `sonarcloud` (es lo que
+  espera el orb de SonarCloud).
+- El resto → como **Project Environment Variables** del proyecto en CircleCI
+  (*Project Settings → Environment Variables*).
+
+| Secreto | Uso | Dónde |
+|---|---|---|
+| `SONAR_TOKEN` | Autenticación con SonarCloud | Context `sonarcloud` |
+| `RENDER_DEPLOY_HOOK_URL` | Disparar el deploy en Render | Project Env Var |
+| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | Enviar notificaciones | Project Env Var |
+| `TRELLO_KEY` / `TRELLO_TOKEN` | Mover tarjetas vía API | Project Env Var |
+| `TRELLO_LIST_*` (IDs de columnas) | Destino de las tarjetas según el estado | Project Env Var |
 
 ---
 
 ## 8. Plantillas de Conectividad (Scripts de Consola)
 
-Estructuras `curl` para usar dentro de los *Run Steps* de Harness CI.
+Estructuras `curl` para usar dentro de los `run` steps del `.circleci/config.yml`.
+CircleCI expone variables propias: `CIRCLE_SHA1` (commit), `CIRCLE_BUILD_URL` (link al
+build), `CIRCLE_BRANCH`, etc. El "estado" del pipeline se maneja con steps separados:
+uno con `when: on_success` y otro con `when: on_fail`.
 
 ### Disparar el deploy en Render
 
@@ -276,9 +292,9 @@ curl -X POST "${RENDER_DEPLOY_HOOK_URL}"
 curl -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
   -d "chat_id=${TELEGRAM_CHAT_ID}" \
   -d "parse_mode=HTML" \
-  --data-urlencode "text=Pipeline: ${HARNESS_STAGE_STATUS}
-Commit: ${HARNESS_COMMIT_SHA}
-Link: ${HARNESS_BUILD_URL}"
+  --data-urlencode "text=Pipeline en rama ${CIRCLE_BRANCH}
+Commit: ${CIRCLE_SHA1}
+Link: ${CIRCLE_BUILD_URL}"
 ```
 
 ### Mover una tarjeta en Trello (cambia la columna `idList`)
@@ -313,18 +329,21 @@ ambas flechas del diagrama):
 
 Para tener "todo hecho", en orden:
 
-- [ ] `git init` + crear repositorio público en GitHub *(es la primera pieza del
+- [x] `git init` + crear repositorio público en GitHub *(es la primera pieza del
       propio pipeline)*.
-- [ ] App de demo Go: `main.go`, `internal/calc/sum.go` + test, `web/index.html`
+- [x] App de demo Go: `main.go`, `internal/calc/sum.go` + test, `web/index.html`
       (Three.js), `Dockerfile` multi-stage.
-- [ ] Verificar build local de la imagen con Docker/Podman y `GET /health` respondiendo.
-- [ ] Conectar el repo a SonarCloud y agregar `sonar-project.properties`.
-- [ ] Crear el proyecto/pipeline en Harness CI y conectar el Webhook de GitHub.
-- [ ] Definir los stages: lint → Sonar → `go test` (en PR) y, en `main`, además
-      `go build` + deploy a Render + smoke test + feedback.
-- [ ] Crear el servicio en Render desde el `Dockerfile` y obtener el *Deploy Hook*.
-- [ ] Crear el bot de Telegram y el tablero de Trello; cargar todos los secretos en
-      Harness.
+- [x] Verificar build local de la imagen con Docker y `GET /health` respondiendo.
+- [x] Crear el servicio en Render desde el `Dockerfile` (app viva) y obtener el
+      *Deploy Hook*.
+- [x] Conectar el repo a SonarCloud y agregar `sonar-project.properties` (scan local OK).
+- [ ] Crear el proyecto en CircleCI conectando el repo de GitHub.
+- [ ] Escribir `.circleci/config.yml`: job de validación (lint → Sonar → `go build` +
+      `go test`) y job de `deploy` (filtrado a `master`, `requires` validación) con
+      deploy a Render + smoke test + feedback.
+- [ ] Cargar secretos: Context `sonarcloud` con `SONAR_TOKEN`; Project Env Vars con
+      `RENDER_DEPLOY_HOOK_URL`, Telegram y Trello.
+- [ ] Crear el bot de Telegram y el tablero de Trello.
 - [ ] Prueba de extremo a extremo: ejercitar la **perilla verde** y la **perilla roja**.
 
 ### Extensiones opcionales (fuera de alcance inicial)
