@@ -21,7 +21,7 @@ import (
 
 // version es la "perilla visible": al cambiarla, pushear y desplegar, se ve el
 // cambio en producción => prueba de que el deploy llegó.
-const version = "1.0.0"
+const version = "1.0.1"
 
 // commit lo puede inyectar el pipeline en tiempo de build con linker flags:
 //
