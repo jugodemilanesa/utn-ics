@@ -57,6 +57,12 @@ Decisiones clave que condicionan toda implementación:
 - **No agregarse como coautor en los commits.** No incluir líneas
   `Co-Authored-By: Claude ...` ni similares en los mensajes de commit.
 - Hacer commit o push solo cuando el usuario lo pida.
+- **Identidad git de este repo:** la cuenta es `jugodemilanesa` (GitHub), no
+  `misteccapital`. Configurar **localmente** (sin `--global`, porque el usuario tiene
+  dos identidades):
+  - `user.name` = `jugodemilanesa`
+  - `user.email` = `181919739+jugodemilanesa@users.noreply.github.com` (noreply de
+    GitHub; es el email el que linkea el commit a la cuenta, no el nombre).
 
 ## Entorno (WSL2)
 
