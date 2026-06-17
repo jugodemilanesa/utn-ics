@@ -10,5 +10,5 @@ package calc
 // es una función determinística y fácil de testear. Romperla (o romper su test) es
 // una de las "perillas" para disparar el camino rojo del pipeline.
 func Sum(a, b int) int {
-	return a + b
+	return a - b
 }
