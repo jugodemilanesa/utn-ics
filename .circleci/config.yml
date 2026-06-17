@@ -47,6 +47,26 @@ jobs:
           # Lee sonar-project.properties; SONAR_TOKEN viene del Context 'sonarcloud'.
           command: sonar-scanner
 
+  # ---- Job 3: deploy a Render + smoke test (SOLO en master) ----
+  deploy:
+    docker:
+      - image: cimg/base:current # imagen liviana con curl
+    steps:
+      - run:
+          name: Disparar deploy en Render
+          # Le pega al Deploy Hook (URL secreta en la Project Env Var). Render
+          # reconstruye la imagen desde el Dockerfile y actualiza la app.
+          # -f hace fallar el step si el hook responde error HTTP.
+          command: curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+      - run:
+          name: Smoke test (GET /health)
+          # Esperamos a que Render levante y reintentamos para tolerar el cold start.
+          command: |
+            echo "Esperando a que Render despliegue..."
+            sleep 60
+            curl --fail --retry 12 --retry-delay 15 --retry-connrefused \
+              "https://utn-ics.onrender.com/health"
+
 workflows:
   ci:
     jobs:
@@ -55,3 +75,10 @@ workflows:
           requires:
             - validar # sonar corre despues de que validar termine OK
           context: sonarcloud # inyecta SONAR_TOKEN desde el Context
+      - deploy:
+          requires:
+            - validar # solo deploya si validar...
+            - sonar #   ...y sonar pasaron (Quality Gate)
+          filters:
+            branches:
+              only: master # el deploy NO corre en ramas de PR, solo en master
