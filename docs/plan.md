@@ -337,14 +337,19 @@ Para tener "todo hecho", en orden:
 - [x] Crear el servicio en Render desde el `Dockerfile` (app viva) y obtener el
       *Deploy Hook*.
 - [x] Conectar el repo a SonarCloud y agregar `sonar-project.properties` (scan local OK).
-- [ ] Crear el proyecto en CircleCI conectando el repo de GitHub.
-- [ ] Escribir `.circleci/config.yml`: job de validación (lint → Sonar → `go build` +
-      `go test`) y job de `deploy` (filtrado a `master`, `requires` validación) con
-      deploy a Render + smoke test + feedback.
-- [ ] Cargar secretos: Context `sonarcloud` con `SONAR_TOKEN`; Project Env Vars con
-      `RENDER_DEPLOY_HOOK_URL`, Telegram y Trello.
-- [ ] Crear el bot de Telegram y el tablero de Trello.
-- [ ] Prueba de extremo a extremo: ejercitar la **perilla verde** y la **perilla roja**.
+- [x] Crear el proyecto en CircleCI conectando el repo de GitHub.
+- [x] Escribir `.circleci/config.yml`: job `validar` (gofmt/vet/`go build`/`go test`),
+      job `sonar` (workspace + scanner) y job `deploy` (filtrado a `master`, `requires`
+      validar+sonar) con deploy a Render + smoke test. *(Falta el feedback en el deploy.)*
+- [x] Cargar secretos hechos: Context `sonarcloud` con `SONAR_TOKEN`; Project Env Var
+      `RENDER_DEPLOY_HOOK_URL`. **Pendientes:** Telegram y Trello.
+- [x] Prueba de extremo a extremo: **perilla verde** (deploy del `1.0.1`) y **perilla
+      roja** (romper `Sum` frena el deploy) demostradas.
+- [ ] Crear el bot de Telegram y el tablero de Trello; cargar sus secretos.
+- [ ] Agregar el feedback al pipeline: `curl` a Telegram (`on_success`/`on_fail`) y
+      mover la tarjeta de Trello según resultado. *(Plantillas en §8.)*
+
+> Estado detallado y dónde retomar: ver `docs/estado.md`.
 
 ### Extensiones opcionales (fuera de alcance inicial)
 
