@@ -1,22 +1,17 @@
 # Pipeline de CircleCI para utn-ics.
-# Version del formato de config (2.1 es la actual; habilita workflows, orbs, etc.).
+# Version del formato de config (2.1 es la actual; habilita workflows, etc.).
 version: 2.1
 
-# Un "job" es una unidad de trabajo que corre en su propio contenedor.
 jobs:
+  # ---- Job 1: validacion (formato, vet, build, tests con cobertura) ----
   validar:
-    # Executor: el contenedor donde corre el job. cimg/go:1.22 trae la toolchain de Go
-    # 1.22 lista (coincide con la directiva "go 1.22" de nuestro go.mod).
     docker:
-      - image: cimg/go:1.22
-    # Los pasos se ejecutan en orden; si uno falla, el job falla y se detiene.
+      - image: cimg/go:1.22 # toolchain de Go 1.22 (coincide con go.mod)
     steps:
-      # checkout: clona el repo dentro del contenedor.
       - checkout
       - run:
           name: Formato (gofmt)
-          # gofmt -l lista los archivos mal formateados. Si lista alguno, el string no
-          # esta vacio y "test -z" falla => el job falla. Asi exigimos codigo formateado.
+          # Si gofmt -l lista algun archivo, "test -z" falla => job rojo.
           command: test -z "$(gofmt -l .)"
       - run:
           name: Vet (analisis estatico basico)
@@ -25,11 +20,38 @@ jobs:
           name: Build (chequea compilacion)
           command: go build ./...
       - run:
-          name: Tests
-          command: go test ./...
+          name: Tests con cobertura
+          # -coverprofile genera coverage.out, que despues lee SonarCloud.
+          command: go test -coverprofile=coverage.out ./...
+      # Guardamos TODO el directorio (codigo + coverage.out + sonar-project.properties)
+      # en un workspace, para que el job 'sonar' (otro contenedor) lo pueda usar.
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .
 
-# Un "workflow" orquesta que jobs corren y en que orden.
+  # ---- Job 2: analisis de calidad con SonarCloud ----
+  sonar:
+    # Imagen oficial del scanner: ya trae Java + el sonar-scanner listo.
+    docker:
+      - image: sonarsource/sonar-scanner-cli:latest
+    environment:
+      # Sin esto, el scanner apunta a localhost:9000 por defecto.
+      SONAR_HOST_URL: https://sonarcloud.io
+    steps:
+      # Recuperamos lo que guardo 'validar' (incluye coverage.out y las properties).
+      - attach_workspace:
+          at: .
+      - run:
+          name: Analisis SonarCloud
+          # Lee sonar-project.properties; SONAR_TOKEN viene del Context 'sonarcloud'.
+          command: sonar-scanner
+
 workflows:
   ci:
     jobs:
       - validar
+      - sonar:
+          requires:
+            - validar # sonar corre despues de que validar termine OK
+          context: sonarcloud # inyecta SONAR_TOKEN desde el Context
