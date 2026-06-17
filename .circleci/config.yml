@@ -1,0 +1,35 @@
+# Pipeline de CircleCI para utn-ics.
+# Version del formato de config (2.1 es la actual; habilita workflows, orbs, etc.).
+version: 2.1
+
+# Un "job" es una unidad de trabajo que corre en su propio contenedor.
+jobs:
+  validar:
+    # Executor: el contenedor donde corre el job. cimg/go:1.22 trae la toolchain de Go
+    # 1.22 lista (coincide con la directiva "go 1.22" de nuestro go.mod).
+    docker:
+      - image: cimg/go:1.22
+    # Los pasos se ejecutan en orden; si uno falla, el job falla y se detiene.
+    steps:
+      # checkout: clona el repo dentro del contenedor.
+      - checkout
+      - run:
+          name: Formato (gofmt)
+          # gofmt -l lista los archivos mal formateados. Si lista alguno, el string no
+          # esta vacio y "test -z" falla => el job falla. Asi exigimos codigo formateado.
+          command: test -z "$(gofmt -l .)"
+      - run:
+          name: Vet (analisis estatico basico)
+          command: go vet ./...
+      - run:
+          name: Build (chequea compilacion)
+          command: go build ./...
+      - run:
+          name: Tests
+          command: go test ./...
+
+# Un "workflow" orquesta que jobs corren y en que orden.
+workflows:
+  ci:
+    jobs:
+      - validar
