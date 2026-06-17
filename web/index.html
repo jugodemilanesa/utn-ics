@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UTN · ICS — Demo CI/CD</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; background: #0a0e16; }
+    body {
+      font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+      color: #e6edf3;
+    }
+    /* El canvas de Three.js ocupa toda la pantalla, de fondo */
+    #scene { position: fixed; inset: 0; z-index: 0; }
+    /* La info se superpone arriba del 3D */
+    #overlay {
+      position: fixed; inset: 0; z-index: 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      pointer-events: none; text-align: center;
+    }
+    h1 {
+      font-size: clamp(1.5rem, 4vw, 2.5rem);
+      font-weight: 600; letter-spacing: 0.04em;
+      text-shadow: 0 0 24px rgba(88, 166, 255, 0.5);
+    }
+    .subtitle { margin-top: 0.5rem; color: #7d8590; font-size: 0.9rem; }
+    .badges { margin-top: 2rem; display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+    .badge {
+      padding: 0.4rem 0.9rem; border-radius: 999px;
+      border: 1px solid rgba(88, 166, 255, 0.35);
+      background: rgba(88, 166, 255, 0.08);
+      font-size: 0.85rem;
+    }
+    .badge .label { color: #7d8590; }
+    .badge .value { color: #58a6ff; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div id="scene"></div>
+
+  <div id="overlay">
+    <h1>UTN · ICS — Pipeline CI/CD</h1>
+    <div class="subtitle">app de demostración · el conejillo de indias</div>
+    <div class="badges">
+      <!-- {{.Version}} y {{.Commit}} los inyecta el servidor Go con html/template -->
+      <div class="badge"><span class="label">versión</span> <span class="value">v{{.Version}}</span></div>
+      <div class="badge"><span class="label">commit</span> <span class="value">{{.Commit}}</span></div>
+    </div>
+  </div>
+
+  <!-- importmap: le dice al navegador de dónde sacar "three" sin bundler ni npm -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    const container = document.getElementById('scene');
+
+    // Escena, cámara y renderer: el trío básico de Three.js
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 3.2;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(renderer.domElement);
+
+    // Un icosaedro en wireframe (la "pelota" geométrica brillante)
+    const geometry = new THREE.IcosahedronGeometry(1.2, 1);
+    const material = new THREE.MeshBasicMaterial({ color: 0x58a6ff, wireframe: true });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    // Un segundo, levemente más grande, semitransparente, para dar profundidad
+    const halo = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(1.6, 0),
+      new THREE.MeshBasicMaterial({ color: 0x1f6feb, wireframe: true, transparent: true, opacity: 0.25 })
+    );
+    scene.add(halo);
+
+    // Bucle de animación: se llama ~60 veces por segundo
+    function animate() {
+      requestAnimationFrame(animate);
+      mesh.rotation.x += 0.004;
+      mesh.rotation.y += 0.006;
+      halo.rotation.x -= 0.002;
+      halo.rotation.y -= 0.003;
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Que la escena se adapte si cambia el tamaño de la ventana
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

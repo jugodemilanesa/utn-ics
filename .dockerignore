@@ -1,0 +1,10 @@
+# No necesitamos nada de esto dentro de la imagen.
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docs/
+CLAUDE.md
+README.md
+bin/
+*.md
