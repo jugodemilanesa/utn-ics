@@ -54,6 +54,10 @@ Decisiones clave que condicionan toda implementación:
 
 ## Convenciones de trabajo
 
+- **Sin emojis en el proyecto.** No usar emojis en docs, código, comentarios,
+  mensajes de commit ni en ningún archivo del repo. Para estados usar texto plano
+  (`OK`, `FALLA`, `EXITO`, `error`). Las flechas tipográficas (`→`, `─►`) en
+  diagramas ASCII están permitidas: no son emojis.
 - **No agregarse como coautor en los commits.** No incluir líneas
   `Co-Authored-By: Claude ...` ni similares en los mensajes de commit.
 - Hacer commit o push solo cuando el usuario lo pida.

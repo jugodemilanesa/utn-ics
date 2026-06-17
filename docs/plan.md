@@ -160,9 +160,9 @@ mantener el CI pure-Go, rápido y barato.
 ### Las dos "perillas" de la demo
 
 1. **Camino verde:** cambiar el string de versión en `/` → push → el deploy llega y
-   la animación nueva aparece en prod. Telegram ✅, Trello → "Done".
+   la animación nueva aparece en prod. Telegram notifica OK, Trello → "Done".
 2. **Camino rojo:** romper `Sum` o su test → push → `go test` falla → el pipeline se
-   detiene, no despliega. Telegram ❌, Trello → "Bugs".
+   detiene, no despliega. Telegram notifica el fallo, Trello → "Bugs".
 
 ### Estructura sugerida del repositorio
 
@@ -195,14 +195,14 @@ el "Ramas y Merges" del modelo.
 ## 5. Plan de Flujo Secuencial (Paso a Paso)
 
 ```text
-PR abierto ─► [gofmt/vet] ─► [SonarCloud] ─► [go test] ─► ✓ mergeable
+PR abierto ─► [gofmt/vet] ─► [SonarCloud] ─► [go test] ─► OK: mergeable
                                   │ falla
-                                  └─► ❌ Telegram + Trello "Bugs", PR bloqueado
+                                  └─► FALLA: Telegram + Trello "Bugs", PR bloqueado
 
 merge a main ─► [Trello: "QA / Verifying"] ─► [gofmt/vet] ─► [SonarCloud Quality Gate]
    ─► [go build + go test] ─► [deploy Render (Render buildea la imagen)] ─► [smoke test GET /health]
-        ├─ ✅ éxito ─► Trello "Done / Production" + Telegram ✅
-        └─ 🔴 falla ─► Telegram ❌ + Trello "Bugs"; Render queda en versión anterior
+        ├─ EXITO ─► Trello "Done / Production" + Telegram notifica OK
+        └─ FALLA ─► Telegram notifica el fallo + Trello "Bugs"; Render queda en versión anterior
 ```
 
 Detalle por fase:
@@ -221,9 +221,9 @@ Detalle por fase:
 7. **Fase de Smoke Test** *(solo en `main`)*. Ver §6.
 8. **Fase de Feedback Final:**
    - **On Success:** Trello mueve la tarjeta a "Done / Production" con un comentario.
-     Telegram: `✅ Pipeline Exitoso. Desplegado correctamente en Render.`
+     Telegram: `Pipeline Exitoso. Desplegado correctamente en Render.`
    - **On Failure:** Trello regresa la tarjeta a "In Progress" / "Bugs" detallando el
-     error. Telegram: `❌ Pipeline Fallido. Revisar logs en Harness.`
+     error. Telegram: `Pipeline Fallido. Revisar logs en Harness.`
 
 ---
 
@@ -276,7 +276,7 @@ curl -X POST "${RENDER_DEPLOY_HOOK_URL}"
 curl -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
   -d "chat_id=${TELEGRAM_CHAT_ID}" \
   -d "parse_mode=HTML" \
-  --data-urlencode "text=📦 Pipeline: ${HARNESS_STAGE_STATUS}
+  --data-urlencode "text=Pipeline: ${HARNESS_STAGE_STATUS}
 Commit: ${HARNESS_COMMIT_SHA}
 Link: ${HARNESS_BUILD_URL}"
 ```
