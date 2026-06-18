@@ -46,12 +46,39 @@ blocks:
         - name: gofmt vet build test
           commands:
             - checkout
-            - sem-version go 1.22       # alinea la toolchain con go.mod
+            - sem-version go 1.25       # alinea la toolchain con go.mod
             # gofmt -l lista archivos mal formateados; test -z falla si hay alguno.
             - test -z "$(gofmt -l .)"
             - go vet ./...
             - go build ./...
             - go test -coverprofile=coverage.out ./...
+
+  # ---- Block: seguridad (DevSecOps) ----
+  # Corre en builds de PUSH (igual que Validate, mismo run/when): forma parte del check
+  # requerido 'ci/semaphoreci/push', asi gatea el merge. Dos jobs en paralelo.
+  - name: Security
+    run:
+      when: "pull_request !~ '.*'"
+    dependencies: []
+    task:
+      jobs:
+        - name: govulncheck (vulns conocidas de Go)
+          commands:
+            - checkout
+            - sem-version go 1.25
+            # Pineado (no @latest) para builds reproducibles. Escanea CVEs de las deps y
+            # de la stdlib de la version de Go en uso, reportando solo las que el codigo
+            # REALMENTE alcanza (analisis de reachability => menos falsos positivos).
+            - go install golang.org/x/vuln/cmd/govulncheck@v1.4.0
+            - export PATH="$PATH:$(go env GOPATH)/bin"
+            - govulncheck ./...
+        - name: gitleaks (secret scanning)
+          commands:
+            - checkout
+            # Escanea el arbol de trabajo buscando secretos (tokens, claves) que se hayan
+            # colado al repo. Pineado a un tag fijo. Sale != 0 si encuentra algo (rompe el
+            # build); --redact evita imprimir el valor del secreto en los logs.
+            - docker run --rm -v "$(pwd):/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.1 dir /repo --no-banner --redact
 
   # ---- Block 2: analisis de calidad con SonarCloud ----
   # Cada block corre en su propia VM, asi que NO hereda el coverage.out del block
@@ -77,24 +104,12 @@ blocks:
         - name: SonarCloud analysis
           commands:
             - checkout
-            - |
-              # Modo segun el tipo de build. Ya NO consultamos la API de GitHub: en un
-              # build de PR, Semaphore expone el numero de PR de forma nativa (este es
-              # el motivo por el que el plan eligio Semaphore).
-              if [ -n "$SEMAPHORE_GIT_PR_NUMBER" ]; then
-                # PR_BRANCH = rama origen del PR; GIT_BRANCH = rama destino (master).
-                PR_ARGS="-Dsonar.pullrequest.key=$SEMAPHORE_GIT_PR_NUMBER -Dsonar.pullrequest.branch=$SEMAPHORE_GIT_PR_BRANCH -Dsonar.pullrequest.base=$SEMAPHORE_GIT_BRANCH"
-              else
-                PR_ARGS=""   # push a master -> modo main
-              fi
-              sem-version go 1.22
-              go test -coverprofile=coverage.out ./...
-              docker run --rm \
-                -e SONAR_TOKEN \
-                -e SONAR_HOST_URL \
-                -v "$(pwd):/usr/src" \
-                sonarsource/sonar-scanner-cli \
-                $PR_ARGS
+            # sem-version es un comando del toolbox de Semaphore: vive en el shell del job
+            # y NO se hereda en un bash hijo, asi que va aca (no dentro del script).
+            - sem-version go 1.25
+            # La logica (modo PR vs main + scanner pineado) vive en un script versionado,
+            # para poder correrla local y pasarle shellcheck. Ver .semaphore/scripts/sonar.sh
+            - bash .semaphore/scripts/sonar.sh
 
 # ---- Deploy por promotion (SOLO push real a master, jamas desde un build de PR) ----
 # OJO: en un build de PR, SEMAPHORE_GIT_BRANCH = master (la rama DESTINO), asi que

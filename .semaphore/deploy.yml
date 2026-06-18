@@ -15,6 +15,10 @@ blocks:
       secrets:
         # Secret de Semaphore llamado 'render' que contiene RENDER_DEPLOY_HOOK_URL.
         - name: render
+        # Para el rollback automatico (epilogue on_fail): API key + service id de Render
+        # y el bot de Telegram para la alerta accionable.
+        - name: render-api
+        - name: telegram
       jobs:
         - name: Trigger Render + smoke test
           commands:
@@ -35,8 +39,25 @@ blocks:
             # smoke.sh con sus reintentos (12x15s, tolera connrefused/5xx). Antes era
             # sleep 60 fijo (mayormente desperdiciado si Render levantaba antes).
             - sleep 15
-            # Smoke test funcional (liveness /health + correctitud /sum), no solo /health.
-            - bash scripts/smoke.sh https://utn-ics.onrender.com
+            # Smoke test funcional (liveness /health + correctitud /sum) + TRAZABILIDAD:
+            # le pasamos el SHA desplegado para verificar que /version en prod sea ese
+            # commit (no una version vieja ni un deploy que no tomo). SMOKE_VERSION_SOFT=1
+            # hace que un mismatch solo ADVIERTA, no rompa: es la red mientras confirmas
+            # que Render expone RENDER_GIT_COMMIT y /version muestra el SHA real en prod.
+            # Una vez confirmado, SACA 'SMOKE_VERSION_SOFT=1' para que la trazabilidad
+            # gatee el deploy de verdad (mismatch => smoke rojo => rollback).
+            - SMOKE_VERSION_SOFT=1 bash scripts/smoke.sh https://utn-ics.onrender.com "$SEMAPHORE_GIT_SHA"
+      # ---- Rollback automatico si el smoke falla (ACTIVO) ----
+      # El epilogue 'on_fail' corre SOLO si el job fallo (ej. smoke rojo) y dispara el
+      # rollback al deploy anterior via API de Render. El script tiene cuidado de NO
+      # degradar si el gate de Render ya retuvo la version buena. Ver
+      # .semaphore/scripts/rollback-render.sh y el runbook docs/runbook-incidentes.md
+      # (rollback de deploy != revert de master: hacen falta los dos).
+      epilogue:
+        on_fail:
+          commands:
+            - checkout
+            - bash .semaphore/scripts/rollback-render.sh
 
 # ---- Notificacion a Telegram del resultado del deploy ----
 after_pipeline:
