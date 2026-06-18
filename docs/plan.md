@@ -27,12 +27,12 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
                                 Webhook │ (Trigger Automático)
                                         ▼
  ┌────────────────────────────────────────────────────────┐
- │                       CIRCLECI                          │
+ │                       SEMAPHORE                         │
  │                                                         │
- │  1. Clone Code                                          │
+ │  1. Clone Code (checkout)                               │
  │  2. Lint  (gofmt / go vet)                              │
  │  3. SonarCloud Scan ───> [ Quality Gate ]              │
- │  4. go build + go test (executor cimg/go)              │
+ │  4. go build + go test (VM con sem-version go)         │
  │  5. Deploy (Webhook HTTP a Render) ──────────┐         │
  │  6. Smoke Test post-deploy (GET /health) ────┤         │
  │  7. Scripts de Feedback (APIs HTTP) ─────────┼───┐     │
@@ -63,7 +63,7 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
   que se versiona es un `Dockerfile` (formato OCI), portable entre ambos runtimes.
   Podman es la opción recomendada en local por ser *daemonless* y *rootless*
   (`alias docker=podman`); la elección **no afecta** al pipeline, ya que Render
-  compila la imagen con su propio runtime (CircleCI ni siquiera la construye). En
+  compila la imagen con su propio runtime (el CI ni siquiera la construye). En
   WSL2, instalar Podman por
   `apt`, no por `snap`. **Gotcha de portabilidad:** Podman exige nombres de imagen
   totalmente calificados, así que el `Dockerfile` debe usar
@@ -75,28 +75,35 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
 ### B. Control de Versiones (VCS)
 
 - **Plataforma: GitHub.** Repositorio central de código. Funciona como disparador
-  automático (Trigger): CircleCI está integrado con GitHub y arranca un pipeline en
-  cada **push** (incluidos los de ramas con Pull Request abierto y el merge a la rama
-  principal `master`).
+  automático (Trigger): Semaphore está integrado con GitHub y arranca un pipeline en
+  cada **push** y en cada **Pull Request** (incluido el merge a la rama principal
+  `master`).
 
 ### C. Servidor de Integración Continua (IC)
 
-- **Motor Cloud: CircleCI.** Plataforma de CI/CD en la nube. Su plan **Free no
-  requiere tarjeta de crédito** y otorga ~30.000 créditos/mes (~3.000 minutos en
-  Linux Medium), de sobra para este proyecto. Se eligió tras descartar Harness (pasó a
-  pedir tarjeta), Cirrus CI (cerró en jun-2026) y GitLab CI (pide tarjeta para los
-  *shared runners*). *(Verificar límites vigentes del Free Tier al configurar.)*
-  La definición del pipeline vive **versionada en el repo** en `.circleci/config.yml`.
-- **Aislamiento.** Cada *job* de CircleCI corre dentro de su propio contenedor
-  efímero en la nube. Usamos el *executor* Docker con la imagen oficial **`cimg/go`**
-  (trae la toolchain de Go lista). Este runtime lo gestiona CircleCI: **no** se usa el
-  Docker/Podman local del desarrollador.
-- **Quién construye la imagen de producción: Render.** CircleCI solo ejecuta
-  `go build` + `go test`; al terminar invoca el *Deploy Hook* de Render, que
-  reconstruye la imagen desde el `Dockerfile`. Así el pipeline no necesita un
+- **Motor Cloud: Semaphore.** Plataforma de CI/CD en la nube. Su plan **Free no
+  requiere tarjeta de crédito** (~$15 de crédito/mes, ~2.000 minutos), de sobra para
+  este proyecto. *(Verificar límites vigentes del Free Tier al configurar.)* La
+  definición del pipeline vive **versionada en el repo** en `.semaphore/semaphore.yml`
+  (CI) y `.semaphore/deploy.yml` (deploy por promotion).
+  - *Historia de la decisión:* se descartaron Harness (pasó a pedir tarjeta), Cirrus CI
+    (cerró jun-2026) y GitLab CI (tarjeta para *shared runners*). Se usó **CircleCI** un
+    tiempo, pero se migró a Semaphore (2026-06-18) por dos motivos: su UI resultó más
+    clara, y —clave— Semaphore expone el **número de PR** de forma nativa
+    (`SEMAPHORE_GIT_PR_NUMBER`), lo que permite correr Sonar en **modo Pull Request** sin
+    plomería. CircleCI no entrega ese dato de forma confiable. GitHub Actions era la otra
+    opción válida equivalente. Detalle en
+    `docs/superpowers/specs/2026-06-18-migracion-semaphore-branching-design.md`.
+- **Aislamiento.** Cada *block* de Semaphore corre en su propia VM efímera en la nube,
+  con la toolchain de Go disponible (`sem-version go 1.22`). El análisis de Sonar se
+  corre dentro del contenedor oficial `sonarsource/sonar-scanner-cli` vía `docker run`.
+  Este runtime lo gestiona Semaphore: **no** se usa el Docker/Podman local.
+- **Quién construye la imagen de producción: Render.** El CI solo ejecuta
+  `go build` + `go test`; al terminar (en `master`) invoca el *Deploy Hook* de Render,
+  que reconstruye la imagen desde el `Dockerfile`. Así el pipeline no necesita un
   *builder* de imágenes (ni registry), lo que simplifica la configuración y mantiene a
   Podman/Docker como herramienta **exclusivamente local**.
-  *(Trade-off: un error en el `Dockerfile` no lo detecta CircleCI sino el build de
+  *(Trade-off: un error en el `Dockerfile` no lo detecta el CI sino el build de
   Render / el smoke test. Como el `Dockerfile` es mínimo y estable, el riesgo es bajo;
   `go build` ya cubre los errores de compilación del código.)*
 
@@ -140,7 +147,7 @@ Justificación frente a Node/Python/Bun:
 - **Cold start casi instantáneo** → el *smoke test* post-deploy en Render Free
   (que duerme el servicio tras 15 min de inactividad) es confiable.
 - **Cero dependencias de test** → `go test` viene en la toolchain; menos `install`,
-  menos créditos de CircleCI consumidos, menos puntos de fallo ajenos al código.
+  menos minutos de CI consumidos, menos puntos de fallo ajenos al código.
 
 ### Endpoints
 
@@ -178,24 +185,37 @@ mantener el CI pure-Go, rápido y barato.
 /web/index.html              # landing con Three.js (servida vía go:embed)
 /Dockerfile                  # multi-stage: build golang -> runtime scratch/distroless
 /sonar-project.properties    # configuración de SonarCloud
-/.circleci/config.yml        # definición del pipeline de CircleCI (versionada en el repo)
+/.semaphore/semaphore.yml    # pipeline de CI de Semaphore (Validate + Sonar)
+/.semaphore/deploy.yml       # pipeline de deploy (promotion: Render + smoke test)
 ```
 
 ---
 
 ## 4. Modelo de Ramas y Disparadores
 
-Se usa el **Pull Request como Quality Gate**. CircleCI dispara en cada push; la
-separación validación/entrega se logra con **filtros de rama** en el workflow:
+Se usa **trunk-based development** con feature branches de vida corta y el **Pull
+Request como Quality Gate**. `master` es el tronco siempre desplegable, **protegido**
+(branch protection de GitHub: sin push directo, PR obligatorio, checks requeridos en
+verde para mergear). Semaphore dispara en cada push y en cada PR; la separación
+validación/entrega se logra con **condiciones** (`when`) y una **promotion**:
 
-- **En cualquier rama / push de PR** → CircleCI corre el job de validación:
-  `lint` → `SonarCloud` → `go build` + `go test`. **No despliega.** El check aparece en
-  el PR y, si falla, el PR no debería mergearse.
-- **En push a `master`** (el merge) → además del job de validación, corre el job de
-  `deploy` (filtrado con `filters: branches: only: master`, y `requires` el job de
-  validación): deploy a Render + smoke test + feedback.
+- **En un Pull Request** (`feat/x` → `master`, `SEMAPHORE_GIT_REF_TYPE = pull-request`)
+  → corren los blocks **Validate** (gofmt/vet/build/test) y **Sonar en modo PR**
+  (`sonar.pullrequest.key=$SEMAPHORE_GIT_PR_NUMBER`, target `master`). **No despliega.**
+  La GitHub App de SonarCloud decora el PR; con branch protection, el check de Semaphore
+  y el de SonarCloud **frenan el merge** si están en rojo.
+- **En push a `master`** (el merge, `branch = master`) → corren Validate + Sonar (modo
+  main) y, por **promotion** (`auto_promote: branch = 'master' AND result = 'passed'`),
+  el pipeline `deploy.yml`: deploy a Render + smoke test (+ feedback, futuro).
 
-Esto separa nítidamente **validación** (toda rama) de **entrega** (solo `master`),
+**Sobre los dos modos de Sonar (importante):** el plan **Free** de SonarCloud solo
+analiza la *main branch* en **modo branch** (cualquier otra rama suelta devuelve HTTP
+403 "non main branches"). Pero **sí** permite el **modo Pull Request** cuando el target
+es la main branch. Por eso el block Sonar corre en modo PR en los PRs (gateando el
+merge, gratis) y en modo main en `master`. Correr Sonar en modo branch sobre una
+feature branch era la causa del 403 original.
+
+Esto separa nítidamente **validación** (todo PR/push) de **entrega** (solo `master`),
 reflejando el "Ramas y Merges" del modelo.
 
 ---
@@ -215,29 +235,29 @@ push a master ─► [Trello: "QA / Verifying"] ─► [gofmt/vet] ─► [Sonar
 
 Detalle por fase:
 
-1. **Fase de Commit.** El equipo sube cambios a GitHub. GitHub dispara a CircleCI.
-2. **Fase de Inicialización.** CircleCI mueve la tarjeta de Trello correspondiente a
-   la columna **"QA / Verifying"**.
+1. **Fase de Commit.** El equipo sube cambios a GitHub. GitHub dispara a Semaphore.
+2. **Fase de Inicialización.** Semaphore mueve la tarjeta de Trello correspondiente a
+   la columna **"QA / Verifying"** *(feedback futuro)*.
 3. **Fase de Lint.** `gofmt -l` y `go vet` validan formato y errores estáticos básicos.
-4. **Fase de Auditoría (SonarCloud).** Se inspecciona el código. Si no pasa el
-   Quality Gate, el job falla y se salta a la fase de error.
-5. **Fase de Build & Test.** En el executor `cimg/go` se ejecuta `go build`
+4. **Fase de Auditoría (SonarCloud).** Se inspecciona el código (modo PR en los PRs,
+   modo main en `master`). Si no pasa el Quality Gate, el block falla.
+5. **Fase de Build & Test.** En la VM (con `sem-version go`) se ejecuta `go build`
    (chequea compilación) y `go test`.
-6. **Fase de Despliegue** *(solo en `master`)*. Si todo dio verde, CircleCI invoca el
-   *Deploy Hook* de Render vía `curl`. **Render reconstruye la imagen desde el
-   `Dockerfile`** y actualiza la app.
+6. **Fase de Despliegue** *(solo en `master`, por promotion)*. Si todo dio verde,
+   Semaphore invoca el *Deploy Hook* de Render vía `curl`. **Render reconstruye la
+   imagen desde el `Dockerfile`** y actualiza la app.
 7. **Fase de Smoke Test** *(solo en `master`)*. Ver §6.
 8. **Fase de Feedback Final:**
    - **On Success:** Trello mueve la tarjeta a "Done / Production" con un comentario.
      Telegram: `Pipeline Exitoso. Desplegado correctamente en Render.`
    - **On Failure:** Trello regresa la tarjeta a "In Progress" / "Bugs" detallando el
-     error. Telegram: `Pipeline Fallido. Revisar logs en CircleCI.`
+     error. Telegram: `Pipeline Fallido. Revisar logs en Semaphore.`
 
 ---
 
 ## 6. Smoke Test Post-Deploy y Rollback
 
-Tras el deploy, CircleCI verifica que la aplicación **realmente levantó** (no solo que
+Tras el deploy, Semaphore verifica que la aplicación **realmente levantó** (no solo que
 compiló). Esto cubre la flecha de "resultados de la instalación" del modelo de IC.
 
 ```bash
@@ -249,36 +269,36 @@ curl --fail --retry 5 --retry-delay 10 --retry-connrefused \
 - Si el smoke test **pasa** → se dispara el feedback de éxito.
 - Si **falla** → feedback de error. Como Render conserva la versión anterior de forma
   inmutable, el **rollback es manual (1 click)** desde el panel de Render. *(Extensión
-  opcional: rollback automático invocando la API de Render desde CircleCI.)*
+  opcional: rollback automático invocando la API de Render desde el CI.)*
 
 ---
 
 ## 7. Manejo de Secretos
 
-Ningún token vive en el repositorio. Todos se configuran en CircleCI como variables
-de entorno y se inyectan en los pasos del pipeline:
+Ningún token vive en el repositorio. Todos se configuran como **Secrets de Semaphore**
+(*organización/proyecto → Settings → Secrets*) y se referencian por **nombre** en los
+blocks con `secrets:`; las variables que contienen quedan disponibles como env vars.
 
-- **`SONAR_TOKEN`** → en un **Context** de CircleCI llamado `sonarcloud` (es lo que
-  espera el orb de SonarCloud).
-- El resto → como **Project Environment Variables** del proyecto en CircleCI
-  (*Project Settings → Environment Variables*).
+- **`sonarcloud`** (secret) → contiene `SONAR_TOKEN`. Lo referencia el block Sonar.
+- **`render`** (secret) → contiene `RENDER_DEPLOY_HOOK_URL`. Lo referencia el block
+  Deploy de `deploy.yml`.
 
-| Secreto | Uso | Dónde |
+| Secret de Semaphore | Variables que contiene | Uso |
 |---|---|---|
-| `SONAR_TOKEN` | Autenticación con SonarCloud | Context `sonarcloud` |
-| `RENDER_DEPLOY_HOOK_URL` | Disparar el deploy en Render | Project Env Var |
-| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | Enviar notificaciones | Project Env Var |
-| `TRELLO_KEY` / `TRELLO_TOKEN` | Mover tarjetas vía API | Project Env Var |
-| `TRELLO_LIST_*` (IDs de columnas) | Destino de las tarjetas según el estado | Project Env Var |
+| `sonarcloud` | `SONAR_TOKEN` | Autenticación con SonarCloud |
+| `render` | `RENDER_DEPLOY_HOOK_URL` | Disparar el deploy en Render |
+| (futuro) `telegram` | `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | Enviar notificaciones |
+| (futuro) `trello` | `TRELLO_KEY`, `TRELLO_TOKEN`, `TRELLO_LIST_*` | Mover tarjetas vía API |
 
 ---
 
 ## 8. Plantillas de Conectividad (Scripts de Consola)
 
-Estructuras `curl` para usar dentro de los `run` steps del `.circleci/config.yml`.
-CircleCI expone variables propias: `CIRCLE_SHA1` (commit), `CIRCLE_BUILD_URL` (link al
-build), `CIRCLE_BRANCH`, etc. El "estado" del pipeline se maneja con steps separados:
-uno con `when: on_success` y otro con `when: on_fail`.
+Estructuras `curl` para usar dentro de los comandos de los blocks de `.semaphore/`.
+Semaphore expone variables propias: `SEMAPHORE_GIT_SHA` (commit), `SEMAPHORE_GIT_BRANCH`
+(rama), `SEMAPHORE_WORKFLOW_ID` (para armar el link al workflow), etc. El "estado" del
+pipeline (éxito/fallo) se maneja con el **`epilogue`** del `task`: secciones `on_pass:` y
+`on_fail:` con sus comandos. *(Equivale al `when: on_success`/`on_fail` de CircleCI.)*
 
 ### Disparar el deploy en Render
 
@@ -292,9 +312,9 @@ curl -X POST "${RENDER_DEPLOY_HOOK_URL}"
 curl -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
   -d "chat_id=${TELEGRAM_CHAT_ID}" \
   -d "parse_mode=HTML" \
-  --data-urlencode "text=Pipeline en rama ${CIRCLE_BRANCH}
-Commit: ${CIRCLE_SHA1}
-Link: ${CIRCLE_BUILD_URL}"
+  --data-urlencode "text=Pipeline en rama ${SEMAPHORE_GIT_BRANCH}
+Commit: ${SEMAPHORE_GIT_SHA}
+Workflow: ${SEMAPHORE_WORKFLOW_ID}"
 ```
 
 ### Mover una tarjeta en Trello (cambia la columna `idList`)
@@ -337,12 +357,15 @@ Para tener "todo hecho", en orden:
 - [x] Crear el servicio en Render desde el `Dockerfile` (app viva) y obtener el
       *Deploy Hook*.
 - [x] Conectar el repo a SonarCloud y agregar `sonar-project.properties` (scan local OK).
-- [x] Crear el proyecto en CircleCI conectando el repo de GitHub.
-- [x] Escribir `.circleci/config.yml`: job `validar` (gofmt/vet/`go build`/`go test`),
-      job `sonar` (workspace + scanner) y job `deploy` (filtrado a `master`, `requires`
-      validar+sonar) con deploy a Render + smoke test. *(Falta el feedback en el deploy.)*
-- [x] Cargar secretos hechos: Context `sonarcloud` con `SONAR_TOKEN`; Project Env Var
-      `RENDER_DEPLOY_HOOK_URL`. **Pendientes:** Telegram y Trello.
+- [~] CI: se implementó primero en CircleCI y se **migró a Semaphore** (2026-06-18).
+      Hecho: `.semaphore/semaphore.yml` (blocks Validate + Sonar en modo PR/main) y
+      `.semaphore/deploy.yml` (promotion: Render + smoke test); `.circleci/` eliminado.
+      **Pendiente (en las UIs):** conectar el repo en Semaphore, cargar los Secrets
+      (`sonarcloud`, `render`), y configurar **branch protection** en `master` (PR
+      obligatorio + checks requeridos: Semaphore y "SonarCloud Code Analysis").
+- [x] Secreto `SONAR_TOKEN` ya existe en SonarCloud (User Token con Browse). Falta
+      cargarlo como Secret `sonarcloud` en Semaphore, junto con `render`
+      (`RENDER_DEPLOY_HOOK_URL`). **Pendientes:** Telegram y Trello.
 - [x] Prueba de extremo a extremo: **perilla verde** (deploy del `1.0.1`) y **perilla
       roja** (romper `Sum` frena el deploy) demostradas.
 - [ ] Crear el bot de Telegram y el tablero de Trello; cargar sus secretos.
