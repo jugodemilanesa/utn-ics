@@ -13,7 +13,7 @@ Para el diseno completo ver `plan.md`.
 ### App de demo (Go) - las 4 piezas completas
 - `internal/calc/sum.go` + `sum_test.go`: funcion pura `Sum` con tests table-driven (100% cobertura).
 - `cmd/server/main.go`: servidor HTTP con `GET /` (landing), `GET /health`, `GET /sum?a=&b=`. Lee `PORT`.
-- `web/index.html` + `web/embed.go`: landing animada con Three.js, embebida con `//go:embed`. Muestra version y commit.
+- `web/index.html` + `web/embed.go`: landing con fondo Three.js (sin build step), embebida con `//go:embed`. Incluye un **sumador funcional** (inputs a + b → boton → resultado) que le pega al endpoint real `GET /sum` y muestra el resultado. Muestra version y commit.
 - `Dockerfile` multi-stage (build `golang:1.22-alpine` → runtime `scratch`) + `.dockerignore`. Build local verificado.
 - `go.mod`: directiva `go 1.22`. Sin dependencias externas (solo stdlib), por eso no hay `go.sum`.
 
@@ -45,7 +45,8 @@ Machine type **`f1-standard-2`** / `ubuntu2204` (la org solo ofrece F1 x86 y R1 
   - `fail_fast: stop` y `auto_cancel: running` (en ramas != master).
 - **`deploy.yml`** (pipeline de deploy, por **promotion**). `auto_promote` cuando
   `result = 'passed' AND branch = 'master' AND pull_request !~ '.*'`. Le pega al Deploy Hook de
-  Render + smoke test a `/health`. El filtro `pull_request !~` evita un deploy desde un build de
+  Render + **smoke test funcional** (`scripts/smoke.sh`: liveness `/health` + correctitud `/sum`).
+  El filtro `pull_request !~` evita un deploy desde un build de
   PR (en un PR, `SEMAPHORE_GIT_BRANCH = master` porque es la rama destino); ademas hay un guard
   de runtime en el job que sale si `SEMAPHORE_GIT_REF_TYPE = pull-request`.
 
@@ -71,6 +72,14 @@ Modelo demostrado de punta a punta:
 - Secret `sonarcloud`: `SONAR_TOKEN`.
 - Secret `render`: `RENDER_DEPLOY_HOOK_URL`.
 - Secret `telegram`: `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`.
+
+### Tooling de desarrollo (local)
+- `Makefile` como puerta de entrada (`make help` lista todo). Targets: `check` (espejo del block
+  Validate: gofmt/vet/build/test + tests del script de notificacion), `fmt`, `run` (go run),
+  `build` (imagen Docker), `docker-run` (build + corre el contenedor local, como Render), `smoke`.
+- `scripts/check.sh`: corre local lo mismo que gatea el CI → feedback antes de pushear.
+- `scripts/smoke.sh <url>`: smoke funcional. Lo usa `deploy.yml` contra Render y se corre local
+  contra `go run`/`docker run`. Una sola logica de smoke, en CI y en local.
 
 ## Que FALTA (donde retomar)
 
@@ -99,8 +108,8 @@ Encaja con el "DevSecOps" del plan. Opcional sumar `staticcheck`.
 
 ### 4. Inyectar el commit SHA real en el binario
 Hoy el badge "commit" dice `dev`. El `Dockerfile` ya acepta `ARG COMMIT` con `-ldflags`; falta
-pasarlo desde Render (o leer `RENDER_GIT_COMMIT` en runtime). Permite que el smoke test verifique
-la version nueva, no solo liveness.
+pasarlo desde Render (o leer `RENDER_GIT_COMMIT` en runtime). Permitiria que el smoke test ademas
+verifique la **version** desplegada (hoy ya chequea `/health` y `/sum`, pero no la version).
 
 ### 5. Tests de los handlers HTTP (`httptest`)
 Hoy `cmd/server` tiene 0% de cobertura; solo `Sum` esta testeada. Sumar tests de `/health` y
@@ -126,8 +135,12 @@ tests y demos mas confiables.
 - Deteccion de PR nativa (sin `curl` a la API de GitHub) + deploy protegido contra builds de PR.
 - Validate corre en cada push (una sola vez); Sonar solo en PR/master.
 - Feedback a Telegram (deploy, CI roto en master, pipeline de PR), verificado e2e.
+- Tooling de dev: `Makefile` + `scripts/check.sh` + `scripts/smoke.sh`.
+- Smoke del deploy ahora **funcional** (`/health` + `/sum`), no solo liveness.
+- Sumador funcional en la UI; sacado el copy de "conejillo de indias".
 
 ## Datos utiles
 - URL app: https://utn-ics.onrender.com  (`/`, `/health`, `/sum?a=2&b=3`)
 - Repo: https://github.com/jugodemilanesa/utn-ics
-- Comandos: `go test ./...`, `go run ./cmd/server`, `docker build -t utn-ics .`
+- Comandos: `make help` (lista todo), `make check`, `make run`, `make smoke URL=...`.
+  Directo: `go test ./...`, `go run ./cmd/server`, `docker build -t utn-ics .`
