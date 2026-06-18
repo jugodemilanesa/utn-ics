@@ -67,7 +67,7 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
   WSL2, instalar Podman por
   `apt`, no por `snap`. **Gotcha de portabilidad:** Podman exige nombres de imagen
   totalmente calificados, así que el `Dockerfile` debe usar
-  `FROM docker.io/library/golang:1.22-alpine` (no `FROM golang:1.22`) para construir
+  `FROM docker.io/library/golang:1.25.11-alpine` (no `FROM golang:1.25`) para construir
   igual en Podman, Docker y Render.
 - **Tablero Kanban: Trello.** Gestor visual del progreso. Se actualiza
   automáticamente mediante llamadas a su API REST desde el pipeline.
@@ -95,7 +95,8 @@ cerebro de integración, el servidor de despliegue y los canales de feedback del
     opción válida equivalente. Detalle en
     `docs/superpowers/specs/2026-06-18-migracion-semaphore-branching-design.md`.
 - **Aislamiento.** Cada *block* de Semaphore corre en su propia VM efímera en la nube,
-  con la toolchain de Go disponible (`sem-version go 1.22`). El análisis de Sonar se
+  con la toolchain de Go disponible (`sem-version go 1.25`; go.mod fija `toolchain
+  go1.25.11`). El análisis de Sonar se
   corre dentro del contenedor oficial `sonarsource/sonar-scanner-cli` vía `docker run`.
   Este runtime lo gestiona Semaphore: **no** se usa el Docker/Podman local.
 - **Quién construye la imagen de producción: Render.** El CI solo ejecuta

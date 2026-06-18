@@ -24,7 +24,17 @@ go build ./...
 echo "==> go test"
 go test ./...
 
+# Espejo del block Security del CI. govulncheck es opcional en local (es un binario que
+# hay que instalar): si esta, lo corremos; si no, avisamos y seguimos (no rompemos el
+# check por no tenerlo). 'make vuln' lo instala y corre.
+echo "==> govulncheck (vulns conocidas)"
+if command -v govulncheck >/dev/null 2>&1; then
+  govulncheck ./...
+else
+  echo "  (govulncheck no instalado; corre 'make vuln' para instalarlo. Se omite.)"
+fi
+
 echo "==> tests del script de notificacion"
 bash .semaphore/scripts/test-notify-telegram.sh
 
-echo "OK: todo paso (equivalente al block Validate del CI)"
+echo "OK: todo paso (equivalente a los blocks Validate + Security del CI)"
