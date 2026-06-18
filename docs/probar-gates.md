@@ -70,9 +70,12 @@ Todos se ven **local** con un comando; si ademas los metes en un PR, ves el chec
 - **Que chequea:** secretos (tokens, claves) que se hayan colado a algun archivo del repo.
 - **Donde / que:** crea un archivo cualquiera con un secreto de juguete (NO lo commitees):
   ```
-  printf 'github_token = "ghp_0123456789abcdef0123456789abcdef0123"\n' > leak-test.txt
+  printf 'github_token = "ghp_0123456789abcdef0123456789abcdef0123"\n' > leak-test.txt   # gitleaks:allow
   ```
-- **Verlo:** `make secrets` → gitleaks lo marca (regla de GitHub PAT) y sale != 0.
+  El `# gitleaks:allow` es para que gitleaks NO marque ESTE doc por el token de ejemplo
+  (es un shell comment, no se escribe al archivo). El `leak-test.txt` que genera el
+  `printf` SI queda con el token crudo -> es lo que gitleaks debe detectar.
+- **Verlo:** `make secrets` → gitleaks marca `leak-test.txt` (regla de GitHub PAT) y sale != 0.
 - **Deshacer:** `rm leak-test.txt`.
 
 ### Sonar — Quality Gate: cobertura de codigo nuevo (block Sonar)
@@ -110,7 +113,9 @@ chequeos y cada uno es un gate: liveness (`/health`), correctitud (`/sum`), traz
 ```
 make run                                               # en otra terminal: levanta localhost:8080
 bash scripts/smoke.sh http://localhost:8080                 # pasa
-bash scripts/smoke.sh http://localhost:8080 deadbeef        # FALLA en /version (mismatch de commit)
+# commit equivocado: el smoke poolea /version hasta timeout. SMOKE_VERSION_TRIES=2 hace
+# que falle rapido (en prod el default es 40x15s = 10 min, para esperar el rebuild de Render).
+SMOKE_VERSION_TRIES=2 bash scripts/smoke.sh http://localhost:8080 deadbeef   # FALLA en /version
 ```
 Para ensayar la falla de `/sum` o `/health` local, rompe el handler (ver abajo), corre
 `make run` y apunta el smoke a localhost. Reproduce el gate sin riesgo de prod.
