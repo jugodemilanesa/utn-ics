@@ -106,3 +106,17 @@ promotions:
     pipeline_file: deploy.yml
     auto_promote:
       when: "result = 'passed' AND branch = 'master' AND pull_request !~ '.*'"
+
+# ---- Notificacion a Telegram (corre SIEMPRE, sea cual sea el resultado) ----
+# after_pipeline (no epilogue) porque corre aunque un job haya sido cancelado por
+# fail_fast. El script decide a quien notificar: build de PR -> 'PR #N: analisis';
+# push a master roto -> 'CI en master'; master OK o rama sin PR -> nada.
+after_pipeline:
+  task:
+    secrets:
+      - name: telegram
+    jobs:
+      - name: Notificar Telegram
+        commands:
+          - checkout
+          - bash .semaphore/scripts/notify-telegram.sh ci
