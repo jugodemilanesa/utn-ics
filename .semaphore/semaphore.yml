@@ -7,9 +7,10 @@ name: CI utn-ics
 
 agent:
   machine:
-    # NOTA: confirmar el type/os_image disponibles en el Free Tier vigente de Semaphore
-    # (panel del proyecto). e1-standard-2 + ubuntu2204 es la combinacion clasica.
-    type: e1-standard-2
+    # Las cuentas nuevas arrancan en la generacion E2 (E1 no esta provista). os_image
+    # valido para E1/E2/F1: ubuntu2204 o ubuntu2404. Si el type falla, mirar el dropdown
+    # del editor de workflow de Semaphore para ver que ofrece tu org.
+    type: e2-standard-2
     os_image: ubuntu2204
 
 blocks:
