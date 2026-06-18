@@ -76,6 +76,9 @@ Machine type **`f1-standard-2`** / `ubuntu2204` (la org solo ofrece F1 x86 y R1 
     degradar si el gate de Render ya retuvo la version buena) y alerta a Telegram con el comando
     de revert PR. **ACTIVO** (epilogue `on_fail`, Secret `render-api` cargado, Health Check Path
     `/health` seteado en Render). Runbook de incidentes en `docs/runbook-incidentes.md`.
+  - Trazabilidad **estricta**: verificado en el deploy del merge #14 que `/version` muestra el
+    SHA real (`0425976` = HEAD master), asi que se saco `SMOKE_VERSION_SOFT`: un mismatch de
+    version ahora falla el smoke y dispara el rollback.
 
 Modelo demostrado de punta a punta:
 - Camino VERDE: cambio valido → Validate + Sonar OK → (al mergear a master) deploy a Render.
@@ -111,12 +114,6 @@ Modelo demostrado de punta a punta:
   contra `go run`/`docker run`. Una sola logica de smoke, en CI y en local.
 
 ## Que FALTA (donde retomar)
-
-**Endurecer la trazabilidad** (lo unico que resta del rollback; el gate y el rollback ya estan
-activos): tras el primer deploy, confirmar que `https://utn-ics.onrender.com/version` muestra el
-commit real (no `dev`). Si si, sacar `SMOKE_VERSION_SOFT=1` del `deploy.yml` para que un mismatch
-de version gatee el deploy (y dispare el rollback). Si mostrara `dev`, Render no estaria
-inyectando `RENDER_GIT_COMMIT` con el deploy-hook y hay que ajustarlo.
 
 **Feedback a Trello** (lo que resta del "Mecanismo de Alertas"; Telegram ya esta hecho):
 - Crear tablero Trello (obtener `TRELLO_KEY`, `TRELLO_TOKEN`, IDs de listas).
