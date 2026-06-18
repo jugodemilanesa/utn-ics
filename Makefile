@@ -2,7 +2,7 @@
 # corre el CI), el Makefile solo es la "puerta de entrada" descubrible: 'make help'.
 # Nota: las recetas (lineas indentadas) arrancan con un TAB, no espacios.
 
-.PHONY: help fmt check test run build smoke
+.PHONY: help fmt check test run build docker-run smoke
 
 help: ## Lista los targets disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -22,6 +22,9 @@ run: ## Levanta el servidor local en http://localhost:8080
 
 build: ## Construye la imagen Docker localmente
 	docker build -t utn-ics .
+
+docker-run: build ## Construye y corre el contenedor local (como Render) en http://localhost:8080
+	docker run --rm -e PORT=8080 -p 8080:8080 utn-ics
 
 smoke: ## Smoke test contra una URL. Uso: make smoke URL=http://localhost:8080
 	bash scripts/smoke.sh $(URL)
