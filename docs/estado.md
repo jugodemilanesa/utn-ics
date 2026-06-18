@@ -60,20 +60,26 @@ Modelo demostrado de punta a punta:
   push) + **`ci/semaphoreci/pr: CI utn-ics`** (gatea Sonar, del build de PR) +
   **`SonarCloud Code Analysis`**.
 
+### Feedback / Alertas (Telegram)
+- Notificaciones a Telegram desde el pipeline, via `after_pipeline` (corre siempre, incluso si
+  un job fue cancelado por `fail_fast`) + el script `.semaphore/scripts/notify-telegram.sh`.
+- Avisa: deploy `EXITO`/`FALLA`, CI roto en master, y resultado del pipeline de PR. Verificado e2e.
+- El script tiene tests locales (`test-notify-telegram.sh`, dry-run) y nunca rompe el build.
+- Trello (la otra mitad del mecanismo de alertas) queda pendiente; ver "Que FALTA".
+
 ### Secretos cargados en Semaphore
 - Secret `sonarcloud`: `SONAR_TOKEN`.
 - Secret `render`: `RENDER_DEPLOY_HOOK_URL`.
+- Secret `telegram`: `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`.
 
 ## Que FALTA (donde retomar)
 
-**Feedback a Telegram + Trello** (la ultima pieza del diagrama):
-- Crear bot de Telegram (obtener `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`).
+**Feedback a Trello** (lo que resta del "Mecanismo de Alertas"; Telegram ya esta hecho):
 - Crear tablero Trello (obtener `TRELLO_KEY`, `TRELLO_TOKEN`, IDs de listas).
-- Cargar esos secretos como **Secrets de Semaphore** y referenciarlos en el block.
-- Agregar las notificaciones segun resultado. En Semaphore esto va en el **`epilogue`** del task
-  (`on_pass` / `on_fail`), no con el `when: on_success` de CircleCI. Mover tarjeta de Trello segun
-  resultado.
-- Plantillas curl en `plan.md` seccion 8.
+- Cargar esos secretos como **Secret de Semaphore** y referenciarlo en el `after_pipeline`.
+- Decidir el modelo: crear una tarjeta por evento (feed) vs mover una tarjeta fija entre listas.
+- Reutiliza el patron de `notify-telegram.sh` (after_pipeline + script). Plantilla curl en
+  `plan.md` seccion 8.
 
 ## Backlog de mejoras (priorizado)
 
@@ -119,6 +125,7 @@ tests y demos mas confiables.
 - Quality Gate de Sonar bloqueante (`sonar.qualitygate.wait=true`).
 - Deteccion de PR nativa (sin `curl` a la API de GitHub) + deploy protegido contra builds de PR.
 - Validate corre en cada push (una sola vez); Sonar solo en PR/master.
+- Feedback a Telegram (deploy, CI roto en master, pipeline de PR), verificado e2e.
 
 ## Datos utiles
 - URL app: https://utn-ics.onrender.com  (`/`, `/health`, `/sum?a=2&b=3`)
