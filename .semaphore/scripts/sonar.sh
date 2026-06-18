@@ -14,9 +14,10 @@ set -euo pipefail
 # completo. Para bumpear, ver tags en hub.docker.com/r/sonarsource/sonar-scanner-cli
 SCANNER_IMAGE="${SONAR_SCANNER_IMAGE:-sonarsource/sonar-scanner-cli:12.1.0.3233_8.0.1}"
 
-# Alinea la toolchain con go.mod y regenera el coverage (cada block corre en su propia
-# VM, asi que NO hereda el coverage.out del block Validate; es barato regenerarlo).
-sem-version go 1.25
+# La toolchain de Go ya la fija el caller con 'sem-version go 1.25' (es un comando del
+# toolbox de Semaphore, solo disponible en el shell del job, no en este bash hijo).
+# Regeneramos el coverage: cada block corre en su propia VM y NO hereda el coverage.out
+# del block Validate; es barato regenerarlo.
 go test -coverprofile=coverage.out ./...
 
 # Construimos los args de modo PR en un array (en vez de una string con word-splitting)

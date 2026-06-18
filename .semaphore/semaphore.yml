@@ -104,6 +104,9 @@ blocks:
         - name: SonarCloud analysis
           commands:
             - checkout
+            # sem-version es un comando del toolbox de Semaphore: vive en el shell del job
+            # y NO se hereda en un bash hijo, asi que va aca (no dentro del script).
+            - sem-version go 1.25
             # La logica (modo PR vs main + scanner pineado) vive en un script versionado,
             # para poder correrla local y pasarle shellcheck. Ver .semaphore/scripts/sonar.sh
             - bash .semaphore/scripts/sonar.sh
