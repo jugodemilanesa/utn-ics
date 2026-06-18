@@ -32,6 +32,11 @@ blocks:
   # Cada block corre en su propia VM, asi que NO hereda el coverage.out del block
   # Validate: lo regeneramos aca para que el scanner lo lea (es barato en este repo).
   - name: Sonar
+    # Correr Sonar SOLO en PRs (modo PR) y en master (modo main). En un push a una
+    # feature branch sin PR, el scanner no tiene contexto de rama y SonarCloud lo
+    # registraria como analisis de la main branch (pisando master): por eso se omite.
+    run:
+      when: "pull_request = true or branch = 'master'"
     task:
       secrets:
         # Secret de Semaphore llamado 'sonarcloud' que contiene SONAR_TOKEN.
