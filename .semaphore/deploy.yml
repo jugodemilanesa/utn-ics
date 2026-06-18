@@ -34,3 +34,14 @@ blocks:
             - >
               curl --fail --retry 12 --retry-delay 15 --retry-connrefused
               "https://utn-ics.onrender.com/health"
+
+# ---- Notificacion a Telegram del resultado del deploy ----
+after_pipeline:
+  task:
+    secrets:
+      - name: telegram
+    jobs:
+      - name: Notificar Telegram
+        commands:
+          - checkout
+          - bash .semaphore/scripts/notify-telegram.sh deploy
