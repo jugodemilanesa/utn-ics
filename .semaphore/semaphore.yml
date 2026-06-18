@@ -1,5 +1,6 @@
 # Pipeline de CI para utn-ics en Semaphore.
-# Corre en cada push y en cada Pull Request. Dos blocks: Validate y Sonar.
+# Corre en cada PUSH (el trigger de Pull Requests esta apagado a proposito: evita el
+# doble build push+pr). Dos blocks: Validate (siempre) y Sonar (decide su modo solo).
 # El deploy NO esta aca: se dispara por promotion (ver el final) hacia deploy.yml,
 # solo cuando el pipeline pasa en master.
 version: v1.0
@@ -32,13 +33,13 @@ blocks:
   # Cada block corre en su propia VM, asi que NO hereda el coverage.out del block
   # Validate: lo regeneramos aca para que el scanner lo lea (es barato en este repo).
   - name: Sonar
-    # Correr Sonar SOLO en PRs (modo PR) y en master (modo main). En un push a una
-    # feature branch sin PR, el scanner no tiene contexto de rama y SonarCloud lo
-    # registraria como analisis de la main branch (pisando master): por eso se omite.
-    # En el DSL de Semaphore 'pull_request' es el numero de PR (string): se testea con
-    # regex. Usamos ^[0-9]+$ (no '.*', que tambien matchearia vacio en pushes sin PR).
-    run:
-      when: "branch = 'master' or pull_request =~ '^[0-9]+$'"
+    # Sin 'run: when': el block corre en todo push y decide su modo adentro. Como no
+    # hay trigger de PR, el numero de PR se resuelve via la API de GitHub (repo publico,
+    # sin token). Modos:
+    #   - master                -> modo main.
+    #   - feature branch con PR  -> modo PR (la API devuelve el numero).
+    #   - feature branch sin PR  -> se omite (exit 0): sin contexto registraria como main.
+    # El plan Free de SonarCloud permite modo PR si el target es la main branch.
     task:
       secrets:
         # Secret de Semaphore llamado 'sonarcloud' que contiene SONAR_TOKEN.
@@ -50,19 +51,26 @@ blocks:
         - name: SonarCloud analysis
           commands:
             - checkout
-            - sem-version go 1.22
-            - go test -coverprofile=coverage.out ./...
-            # Modo PR vs modo branch segun el tipo de ref:
-            #  - pull-request -> analisis de PR (target master); el plan Free lo permite
-            #    porque el target es la main branch. La GitHub App decora el PR.
-            #  - branch (master) -> analisis de la main branch.
-            # Las variables persisten entre comandos del mismo job (misma shell).
+            # Decidir el modo ANTES de gastar en tests/scanner.
             - |
+              # Guard: si quedara prendido el trigger de PR, Sonar igual corre desde el
+              # build de push; el build de PR se omite (evita pisar master y duplicados).
               if [ "$SEMAPHORE_GIT_REF_TYPE" = "pull-request" ]; then
-                PR_ARGS="-Dsonar.pullrequest.key=$SEMAPHORE_GIT_PR_NUMBER -Dsonar.pullrequest.branch=$SEMAPHORE_GIT_PR_BRANCH -Dsonar.pullrequest.base=master"
-              else
-                PR_ARGS=""
+                echo "Build de tipo PR: en este proyecto Sonar corre desde el push. Se omite."
+                exit 0
               fi
+              if [ "$SEMAPHORE_GIT_BRANCH" = "master" ]; then
+                PR_ARGS=""   # modo main
+              else
+                PR=$(curl -s "https://api.github.com/repos/jugodemilanesa/utn-ics/pulls?head=jugodemilanesa:$SEMAPHORE_GIT_BRANCH&state=open" | jq -r '.[0].number // empty')
+                if [ -z "$PR" ]; then
+                  echo "Sin PR abierto para $SEMAPHORE_GIT_BRANCH; se omite Sonar."
+                  exit 0
+                fi
+                PR_ARGS="-Dsonar.pullrequest.key=$PR -Dsonar.pullrequest.branch=$SEMAPHORE_GIT_BRANCH -Dsonar.pullrequest.base=master"
+              fi
+              sem-version go 1.22
+              go test -coverprofile=coverage.out ./...
               docker run --rm \
                 -e SONAR_TOKEN \
                 -e SONAR_HOST_URL \
