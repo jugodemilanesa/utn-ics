@@ -42,6 +42,15 @@ jobs:
       # Recuperamos lo que guardo 'validar' (incluye coverage.out y las properties).
       - attach_workspace:
           at: .
+      # Step temporal de diagnostico: confirma que el SONAR_TOKEN correcto llego
+      # al Context, SIN imprimir el secreto. Un user token de Sonar son 40 chars;
+      # el sha256 se compara contra el del token nuevo corrido en local. Sacar
+      # este step una vez confirmado que el token correcto esta inyectado.
+      - run:
+          name: Debug token (temporal)
+          command: |
+            echo "largo del token: $(printf %s "$SONAR_TOKEN" | wc -c)"
+            printf %s "$SONAR_TOKEN" | sha256sum
       - run:
           name: Analisis SonarCloud
           # Lee sonar-project.properties; SONAR_TOKEN viene del Context 'sonarcloud'.
