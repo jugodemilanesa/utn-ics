@@ -41,12 +41,10 @@ blocks:
             - sleep 15
             # Smoke test funcional (liveness /health + correctitud /sum) + TRAZABILIDAD:
             # le pasamos el SHA desplegado para verificar que /version en prod sea ese
-            # commit (no una version vieja ni un deploy que no tomo). SMOKE_VERSION_SOFT=1
-            # hace que un mismatch solo ADVIERTA, no rompa: es la red mientras confirmas
-            # que Render expone RENDER_GIT_COMMIT y /version muestra el SHA real en prod.
-            # Una vez confirmado, SACA 'SMOKE_VERSION_SOFT=1' para que la trazabilidad
-            # gatee el deploy de verdad (mismatch => smoke rojo => rollback).
-            - SMOKE_VERSION_SOFT=1 bash scripts/smoke.sh https://utn-ics.onrender.com "$SEMAPHORE_GIT_SHA"
+            # commit. Confirmado que Render expone RENDER_GIT_COMMIT y /version muestra el
+            # SHA real (deploy del merge #14: /version = 0425976 = HEAD master), la
+            # verificacion es ESTRICTA: un mismatch falla el smoke => job rojo => rollback.
+            - bash scripts/smoke.sh https://utn-ics.onrender.com "$SEMAPHORE_GIT_SHA"
       # ---- Rollback automatico si el smoke falla (ACTIVO) ----
       # El epilogue 'on_fail' corre SOLO si el job fallo (ej. smoke rojo) y dispara el
       # rollback al deploy anterior via API de Render. El script tiene cuidado de NO
