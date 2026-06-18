@@ -31,10 +31,15 @@ auto_cancel:
 blocks:
   # ---- Block 1: validacion (formato, vet, build, tests con cobertura) ----
   - name: Validate
-    # Corre en push a master y en cualquier build de PR. En un push a rama feature
-    # (sin contexto de PR) la condicion da false y el block queda SKIPPED.
+    # Corre UNA sola vez por cambio, SIEMPRE que sea build de PUSH (cualquier rama
+    # + master), nunca en build de PR. 'pull_request !~' = "no es un build de PR".
+    #   - push a rama sin PR -> corre (tenes tests sin abrir PR)
+    #   - push a rama con PR -> corre en el pipeline de PUSH; el de PR lo skipea
+    #   - push a master      -> corre
+    # El no-duplicar sale de esto: un push a una rama con PR dispara DOS pipelines
+    # (push + pr); Validate va SOLO en el de push y Sonar SOLO en el de PR.
     run:
-      when: "branch = 'master' OR pull_request =~ '.*'"
+      when: "pull_request !~ '.*'"
     dependencies: []
     task:
       jobs:
@@ -52,11 +57,15 @@ blocks:
   # Cada block corre en su propia VM, asi que NO hereda el coverage.out del block
   # Validate: lo regeneramos aca para que el scanner lo lea (es barato en este repo).
   - name: Sonar
-    # Mismo gate que Validate. Ademas DEPENDE de Validate: si el build/test falla,
-    # Sonar ni arranca (recupera el 'requires: validar' que tenia el CircleCI viejo).
+    # Corre SOLO en build de PR (modo PR) o push a master (modo main). En un push a
+    # rama feature (con o sin PR) queda SKIPPED -> nunca corre en modo branch (que
+    # daria 403 del free tier). Asi Sonar tambien corre una sola vez por cambio.
+    # Sin 'dependencies': Validate ahora vive en OTRO pipeline (el de push), y las
+    # dependencias son intra-pipeline. En master corren juntos; si Validate falla,
+    # fail_fast corta y de ultima la promotion exige result=passed (no deploya roto).
     run:
       when: "branch = 'master' OR pull_request =~ '.*'"
-    dependencies: ["Validate"]
+    dependencies: []
     task:
       secrets:
         # Secret de Semaphore llamado 'sonarcloud' que contiene SONAR_TOKEN.
