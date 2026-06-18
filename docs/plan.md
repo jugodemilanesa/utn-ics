@@ -357,15 +357,17 @@ Para tener "todo hecho", en orden:
 - [x] Crear el servicio en Render desde el `Dockerfile` (app viva) y obtener el
       *Deploy Hook*.
 - [x] Conectar el repo a SonarCloud y agregar `sonar-project.properties` (scan local OK).
-- [~] CI: se implementó primero en CircleCI y se **migró a Semaphore** (2026-06-18).
-      Hecho: `.semaphore/semaphore.yml` (blocks Validate + Sonar en modo PR/main) y
-      `.semaphore/deploy.yml` (promotion: Render + smoke test); `.circleci/` eliminado.
-      **Pendiente (en las UIs):** conectar el repo en Semaphore, cargar los Secrets
-      (`sonarcloud`, `render`), y configurar **branch protection** en `master` (PR
-      obligatorio + checks requeridos: Semaphore y "SonarCloud Code Analysis").
-- [x] Secreto `SONAR_TOKEN` ya existe en SonarCloud (User Token con Browse). Falta
-      cargarlo como Secret `sonarcloud` en Semaphore, junto con `render`
-      (`RENDER_DEPLOY_HOOK_URL`). **Pendientes:** Telegram y Trello.
+- [x] CI: se implementó primero en CircleCI y se **migró a Semaphore** (2026-06-18),
+      funcionando end-to-end. `.semaphore/semaphore.yml` (blocks Validate + Sonar modo
+      PR/main, machine `f1-standard-2`) y `.semaphore/deploy.yml` (promotion: Render +
+      smoke test); `.circleci/` eliminado. Repo conectado en Semaphore (PRs habilitados),
+      Secrets `sonarcloud` y `render` cargados. Probado: PR contra master con checks
+      `ci/semaphoreci/pr` + `SonarCloud Code Analysis` en verde; merge a master disparó
+      el deploy a Render + smoke test OK.
+- [ ] **Branch protection** en `master` (GitHub Settings → Branches): require PR +
+      checks requeridos `ci/semaphoreci/pr: CI utn-ics` y `SonarCloud Code Analysis`.
+- [x] Secrets en Semaphore: `sonarcloud` (`SONAR_TOKEN`) y `render`
+      (`RENDER_DEPLOY_HOOK_URL`) cargados. **Pendientes:** Telegram y Trello.
 - [x] Prueba de extremo a extremo: **perilla verde** (deploy del `1.0.1`) y **perilla
       roja** (romper `Sum` frena el deploy) demostradas.
 - [ ] Crear el bot de Telegram y el tablero de Trello; cargar sus secretos.
