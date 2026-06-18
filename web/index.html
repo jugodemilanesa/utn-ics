@@ -13,20 +13,60 @@
     }
     /* El canvas de Three.js ocupa toda la pantalla, de fondo */
     #scene { position: fixed; inset: 0; z-index: 0; }
-    /* La info se superpone arriba del 3D */
+    /* La info se superpone arriba del 3D. pointer-events: none para que el 3D
+       respire; los elementos interactivos lo reactivan con pointer-events: auto. */
     #overlay {
       position: fixed; inset: 0; z-index: 1;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      pointer-events: none; text-align: center;
+      pointer-events: none; text-align: center; padding: 1rem;
     }
     h1 {
-      font-size: clamp(1.5rem, 4vw, 2.5rem);
+      font-size: clamp(1.4rem, 4vw, 2.4rem);
       font-weight: 600; letter-spacing: 0.04em;
       text-shadow: 0 0 24px rgba(88, 166, 255, 0.5);
     }
     .subtitle { margin-top: 0.5rem; color: #7d8590; font-size: 0.9rem; }
-    .badges { margin-top: 2rem; display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+
+    /* --- Sumador (la feature del sistema, viva en la UI) --- */
+    .calc {
+      pointer-events: auto;          /* reactiva la interaccion sobre la tarjeta */
+      margin-top: 2rem;
+      width: min(92vw, 380px);
+      padding: 1.5rem;
+      border-radius: 16px;
+      border: 1px solid rgba(88, 166, 255, 0.35);
+      background: rgba(13, 17, 23, 0.72);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 40px rgba(88, 166, 255, 0.12);
+      display: flex; flex-direction: column; gap: 1rem;
+    }
+    .calc-title {
+      font-size: 0.8rem; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #7d8590;
+    }
+    .inputs { display: flex; align-items: center; justify-content: center; gap: 0.6rem; }
+    .inputs input {
+      width: 5rem; padding: 0.6rem; text-align: center;
+      font-family: inherit; font-size: 1.2rem; color: #e6edf3;
+      background: #0a0e16; border: 1px solid rgba(88, 166, 255, 0.3);
+      border-radius: 8px; outline: none;
+    }
+    .inputs input:focus { border-color: #58a6ff; box-shadow: 0 0 0 2px rgba(88,166,255,0.25); }
+    .inputs .plus { font-size: 1.4rem; color: #58a6ff; }
+    button {
+      pointer-events: auto;
+      padding: 0.7rem 1rem; font-family: inherit; font-size: 1rem; font-weight: 600;
+      color: #0a0e16; background: #58a6ff; border: none; border-radius: 8px;
+      cursor: pointer; transition: filter 0.15s, transform 0.05s;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:active { transform: translateY(1px); }
+    .result { min-height: 1.6rem; font-size: 1.25rem; font-weight: 600; }
+    .result.ok { color: #58a6ff; text-shadow: 0 0 16px rgba(88, 166, 255, 0.6); }
+    .result.err { color: #f85149; font-size: 0.9rem; font-weight: 400; }
+
+    .badges { margin-top: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
     .badge {
       padding: 0.4rem 0.9rem; border-radius: 999px;
       border: 1px solid rgba(88, 166, 255, 0.35);
@@ -42,13 +82,53 @@
 
   <div id="overlay">
     <h1>UTN · ICS — Pipeline CI/CD</h1>
-    <div class="subtitle">app de demostración · el conejillo de indias</div>
+    <div class="subtitle">demo en vivo del sistema · probá el sumador</div>
+
+    <!-- Sumador: ejercita el endpoint GET /sum del backend Go (calc.Sum) -->
+    <form id="calc" class="calc">
+      <div class="calc-title">Sumador</div>
+      <div class="inputs">
+        <input id="a" type="number" value="2" inputmode="numeric" aria-label="primer sumando" />
+        <span class="plus">+</span>
+        <input id="b" type="number" value="3" inputmode="numeric" aria-label="segundo sumando" />
+      </div>
+      <button type="submit">Sumar</button>
+      <div id="result" class="result" aria-live="polite"></div>
+    </form>
+
     <div class="badges">
       <!-- {{.Version}} y {{.Commit}} los inyecta el servidor Go con html/template -->
       <div class="badge"><span class="label">versión</span> <span class="value">v{{.Version}}</span></div>
       <div class="badge"><span class="label">commit</span> <span class="value">{{.Commit}}</span></div>
     </div>
   </div>
+
+  <!-- El sumador: le pega al endpoint real /sum y muestra el resultado -->
+  <script>
+    const form = document.getElementById('calc');
+    const resultEl = document.getElementById('result');
+
+    async function sumar() {
+      const a = document.getElementById('a').value;
+      const b = document.getElementById('b').value;
+      resultEl.className = 'result';
+      resultEl.textContent = 'calculando...';
+      try {
+        const res = await fetch(`/sum?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'error en la petición');
+        resultEl.textContent = `${data.a} + ${data.b} = ${data.result}`;
+        resultEl.classList.add('ok');
+      } catch (err) {
+        resultEl.textContent = 'error: ' + err.message;
+        resultEl.classList.add('err');
+      }
+    }
+
+    form.addEventListener('submit', (e) => { e.preventDefault(); sumar(); });
+    // Calcula una vez al cargar, para que la demo muestre un resultado de entrada.
+    sumar();
+  </script>
 
   <!-- importmap: le dice al navegador de dónde sacar "three" sin bundler ni npm -->
   <script type="importmap">
