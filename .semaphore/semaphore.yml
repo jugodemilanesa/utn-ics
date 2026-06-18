@@ -1,0 +1,71 @@
+# Pipeline de CI para utn-ics en Semaphore.
+# Corre en cada push y en cada Pull Request. Dos blocks: Validate y Sonar.
+# El deploy NO esta aca: se dispara por promotion (ver el final) hacia deploy.yml,
+# solo cuando el pipeline pasa en master.
+version: v1.0
+name: CI utn-ics
+
+agent:
+  machine:
+    # NOTA: confirmar el type/os_image disponibles en el Free Tier vigente de Semaphore
+    # (panel del proyecto). e1-standard-2 + ubuntu2204 es la combinacion clasica.
+    type: e1-standard-2
+    os_image: ubuntu2204
+
+blocks:
+  # ---- Block 1: validacion (formato, vet, build, tests con cobertura) ----
+  - name: Validate
+    task:
+      jobs:
+        - name: gofmt vet build test
+          commands:
+            - checkout
+            - sem-version go 1.22       # alinea la toolchain con go.mod
+            # gofmt -l lista archivos mal formateados; test -z falla si hay alguno.
+            - test -z "$(gofmt -l .)"
+            - go vet ./...
+            - go build ./...
+            - go test -coverprofile=coverage.out ./...
+
+  # ---- Block 2: analisis de calidad con SonarCloud ----
+  # Cada block corre en su propia VM, asi que NO hereda el coverage.out del block
+  # Validate: lo regeneramos aca para que el scanner lo lea (es barato en este repo).
+  - name: Sonar
+    task:
+      secrets:
+        # Secret de Semaphore llamado 'sonarcloud' que contiene SONAR_TOKEN.
+        - name: sonarcloud
+      env_vars:
+        - name: SONAR_HOST_URL
+          value: https://sonarcloud.io
+      jobs:
+        - name: SonarCloud analysis
+          commands:
+            - checkout
+            - sem-version go 1.22
+            - go test -coverprofile=coverage.out ./...
+            # Modo PR vs modo branch segun el tipo de ref:
+            #  - pull-request -> analisis de PR (target master); el plan Free lo permite
+            #    porque el target es la main branch. La GitHub App decora el PR.
+            #  - branch (master) -> analisis de la main branch.
+            # Las variables persisten entre comandos del mismo job (misma shell).
+            - |
+              if [ "$SEMAPHORE_GIT_REF_TYPE" = "pull-request" ]; then
+                PR_ARGS="-Dsonar.pullrequest.key=$SEMAPHORE_GIT_PR_NUMBER -Dsonar.pullrequest.branch=$SEMAPHORE_GIT_PR_BRANCH -Dsonar.pullrequest.base=master"
+              else
+                PR_ARGS=""
+              fi
+              docker run --rm \
+                -e SONAR_TOKEN \
+                -e SONAR_HOST_URL \
+                -v "$(pwd):/usr/src" \
+                sonarsource/sonar-scanner-cli \
+                $PR_ARGS
+
+# ---- Deploy por promotion (solo en master, si todo paso) ----
+# Si Validate o Sonar fallan, result != passed y la promotion no dispara: no hay deploy.
+promotions:
+  - name: Deploy a Render
+    pipeline_file: deploy.yml
+    auto_promote:
+      when: "branch = 'master' AND result = 'passed'"

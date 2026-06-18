@@ -30,12 +30,16 @@ flujo y decisiones ya tomadas.
 
 ## Arquitectura objetivo (resumen; detalle en docs/plan.md)
 
-Flujo: **GitHub** (VCS + trigger) → **CircleCI** (lint + SonarCloud + `go test`) →
+Flujo: **GitHub** (VCS + trigger) → **Semaphore** (lint + SonarCloud + `go test`) →
 **Render** (deploy + hosting) → feedback a **Telegram** (alertas) + **Trello** (kanban).
 
-Nota: el servidor de IC es **CircleCI** (`.circleci/config.yml`). Se descartó Harness
-(pasó a pedir tarjeta), Cirrus CI (cerró jun-2026) y GitLab CI (pide tarjeta para
-shared runners). GitHub Actions era la otra opción válida; se eligió CircleCI.
+Nota: el servidor de IC es **Semaphore** (`.semaphore/semaphore.yml` + `deploy.yml`).
+Historia: se descartó Harness (pasó a pedir tarjeta), Cirrus CI (cerró jun-2026) y
+GitLab CI (pide tarjeta para shared runners). Se usó CircleCI un tiempo, pero se migró a
+Semaphore (2026-06-18) por UI más clara y, sobre todo, porque expone el número de PR de
+forma nativa (`SEMAPHORE_GIT_PR_NUMBER`), lo que habilita correr Sonar en modo PR.
+GitHub Actions era la otra opción válida equivalente. Detalle:
+`docs/superpowers/specs/2026-06-18-migracion-semaphore-branching-design.md`.
 
 Decisiones clave que condicionan toda implementación:
 
@@ -45,17 +49,23 @@ Decisiones clave que condicionan toda implementación:
 - **Front con Three.js SIN build step.** Un único `web/index.html` con Three.js por
   CDN, embebido en el binario con `//go:embed`. No agregar npm/bundler al pipeline
   (mantiene el CI pure-Go).
-- **La imagen Docker la construye Render, no el CI.** CircleCI solo hace
+- **La imagen Docker la construye Render, no el CI.** El CI solo hace
   `go build` + `go test`; al terminar invoca el Deploy Hook de Render, que reconstruye
   desde el `Dockerfile`. No hay registry ni builder de imágenes en CI.
 - **Docker y Podman son intercambiables y solo para uso local.** El `Dockerfile` debe
   usar nombres de imagen totalmente calificados (`FROM docker.io/library/golang:...`)
   para buildear igual en Podman, Docker y Render.
-- **Modelo de ramas:** la rama principal es **`master`**. CircleCI dispara en cada
-  push; con filtros de rama, el job de validación (lint + Sonar + test) corre en toda
-  rama y el job de deploy solo en `master`.
-- **Secretos:** `SONAR_TOKEN` va en un Context `sonarcloud` de CircleCI; el resto
-  (Render/Telegram/Trello) como Project Env Vars. Nunca en el repo.
+- **Modelo de ramas:** trunk-based. La rama principal es **`master`** (tronco siempre
+  desplegable, protegida sin push directo). Cada cambio va en una feature branch corta
+  (`feat/...`, `fix/...`) y entra por **Pull Request**. En PR corre el block Validate
+  (gofmt/vet/build/test) + Sonar en **modo PR** (gatea el merge vía branch protection).
+  En `master` corre Validate + Sonar (modo main) + deploy a Render (por promotion, solo
+  si todo pasa). Razón del modo PR: el plan Free de SonarCloud solo analiza la main
+  branch en modo branch (las demás dan 403), pero **sí** permite analizar PRs cuyo
+  target es la main branch.
+- **Secretos:** se cargan como **Secrets de Semaphore** y se referencian por nombre en
+  los blocks: `sonarcloud` (contiene `SONAR_TOKEN`) y `render` (contiene
+  `RENDER_DEPLOY_HOOK_URL`); Telegram/Trello cuando se implementen. Nunca en el repo.
 
 ## Convenciones de trabajo
 
