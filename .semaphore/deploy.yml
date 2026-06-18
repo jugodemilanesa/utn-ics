@@ -26,14 +26,15 @@ blocks:
                 echo "Build de tipo PR: no se deploya codigo sin mergear. Se omite."
                 exit 0
               fi
+            # checkout para tener scripts/smoke.sh en disco (el smoke test versionado).
+            - checkout
             # -f hace fallar el step si el hook responde error HTTP.
             - curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
             - echo "Esperando a que Render despliegue..."
-            # Tolera el cold start del Free Tier de Render reintentando /health.
+            # Le damos un margen a Render para empezar; smoke.sh ademas reintenta solo.
             - sleep 60
-            - >
-              curl --fail --retry 12 --retry-delay 15 --retry-connrefused
-              "https://utn-ics.onrender.com/health"
+            # Smoke test funcional (liveness /health + correctitud /sum), no solo /health.
+            - bash scripts/smoke.sh https://utn-ics.onrender.com
 
 # ---- Notificacion a Telegram del resultado del deploy ----
 after_pipeline:
