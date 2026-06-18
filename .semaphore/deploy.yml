@@ -31,8 +31,10 @@ blocks:
             # -f hace fallar el step si el hook responde error HTTP.
             - curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
             - echo "Esperando a que Render despliegue..."
-            # Le damos un margen a Render para empezar; smoke.sh ademas reintenta solo.
-            - sleep 60
+            # Margen minimo para que Render arranque; el grueso de la espera la maneja
+            # smoke.sh con sus reintentos (12x15s, tolera connrefused/5xx). Antes era
+            # sleep 60 fijo (mayormente desperdiciado si Render levantaba antes).
+            - sleep 15
             # Smoke test funcional (liveness /health + correctitud /sum), no solo /health.
             - bash scripts/smoke.sh https://utn-ics.onrender.com
 
