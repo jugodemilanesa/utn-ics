@@ -68,13 +68,19 @@ func main() {
 // REALMENTE desplegado y atraparía una divergencia entre lo que testeó el CI y lo que
 // compiló Render. Si la invariante falla, devolvemos 503 (vivo pero NO apto para tráfico).
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	if calc.Sum(2, 3) != 5 {
+	if !healthy() {
 		http.Error(w, "unhealthy: invariante Sum rota", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
 }
+
+// healthy reporta si la app esta apta para servir trafico. Hoy valida la invariante
+// de negocio (Sum); cuando haya dependencias (DB, etc.) se chequean aca. Es una var de
+// funcion (no codigo inline) para que los tests puedan simular el caso unhealthy y
+// verificar que el handler responde 503: asi el contrato "no sano -> 503" queda testeado.
+var healthy = func() bool { return calc.Sum(2, 3) == 5 }
 
 // handleVersion expone versión y commit como JSON. Es la pieza de TRAZABILIDAD: el
 // smoke test post-deploy le pega para confirmar que el commit vivo en prod es el que

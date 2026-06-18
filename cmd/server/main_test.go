@@ -29,6 +29,19 @@ func TestHandleHealth(t *testing.T) {
 	}
 }
 
+func TestHandleHealthUnhealthy(t *testing.T) {
+	// Simulamos el caso "no sano" intercambiando la funcion healthy, y verificamos que
+	// el handler responde 503 (el contrato que usa el health-check gate de Render).
+	orig := healthy
+	healthy = func() bool { return false }
+	defer func() { healthy = orig }()
+
+	rec := doGet(handleHealth, "/health")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, quería %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
 func TestHandleSumOK(t *testing.T) {
 	rec := doGet(handleSum, "/sum?a=2&b=3")
 	if rec.Code != http.StatusOK {
