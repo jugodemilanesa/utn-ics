@@ -1,0 +1,28 @@
+# Pipeline de deploy de utn-ics, disparado por promotion desde semaphore.yml
+# (auto_promote: branch = master AND result = passed). Le pega al Deploy Hook de
+# Render (que reconstruye la imagen desde el Dockerfile) y corre el smoke test.
+version: v1.0
+name: Deploy a Render
+
+agent:
+  machine:
+    type: f1-standard-2
+    os_image: ubuntu2204
+
+blocks:
+  - name: Deploy
+    task:
+      secrets:
+        # Secret de Semaphore llamado 'render' que contiene RENDER_DEPLOY_HOOK_URL.
+        - name: render
+      jobs:
+        - name: Trigger Render + smoke test
+          commands:
+            # -f hace fallar el step si el hook responde error HTTP.
+            - curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+            - echo "Esperando a que Render despliegue..."
+            # Tolera el cold start del Free Tier de Render reintentando /health.
+            - sleep 60
+            - >
+              curl --fail --retry 12 --retry-delay 15 --retry-connrefused
+              "https://utn-ics.onrender.com/health"
