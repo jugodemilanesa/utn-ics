@@ -18,6 +18,14 @@ blocks:
       jobs:
         - name: Trigger Render + smoke test
           commands:
+            # Red de seguridad: aunque la promotion ya excluye builds de PR, si por
+            # cualquier motivo se promoviera uno, NO deployamos codigo sin mergear.
+            # SEMAPHORE_GIT_REF_TYPE es confiable en runtime (no depende del DSL).
+            - |
+              if [ "$SEMAPHORE_GIT_REF_TYPE" = "pull-request" ]; then
+                echo "Build de tipo PR: no se deploya codigo sin mergear. Se omite."
+                exit 0
+              fi
             # -f hace fallar el step si el hook responde error HTTP.
             - curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
             - echo "Esperando a que Render despliegue..."
