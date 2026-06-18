@@ -5,7 +5,7 @@
 # Usamos el nombre TOTALMENTE CALIFICADO (docker.io/library/...) para que la
 # imagen se construya igual con Docker, Podman y Render (gotcha de Podman).
 # ============================================================================
-FROM docker.io/library/golang:1.22-alpine AS build
+FROM docker.io/library/golang:1.25.11-alpine AS build
 
 WORKDIR /src
 
